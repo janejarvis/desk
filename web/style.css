@@ -145,7 +145,7 @@ h2{margin:0;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:u
 .swim .lanehead{position:sticky;top:-20px;z-index:2;padding:8px 0;background:linear-gradient(var(--glass-2),var(--glass-2)) padding-box;border-radius:12px}
 .swim .lanehead .col h3{margin:0 10px}
 .swim .phead{margin-top:10px}
-.pill.blk{background:var(--bad-soft);color:var(--bad)}
+.pill.blk{background:var(--bad-soft);color:var(--bad);white-space:normal;line-height:1.35}
 .pill.sentp{background:var(--accent-soft);color:var(--accent)}
 .waitsel{font:500 11px/1 var(--font);border-radius:6px;padding:3px 4px;background:var(--warn-soft);color:var(--warn);border:0}
 .col h3 .n{font-family:var(--mono);letter-spacing:0}
@@ -370,8 +370,12 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 .composer{padding:6px 10px 10px}
 .composer textarea{min-height:36px;padding:8px 12px;border-radius:15px}
 .composer .btn{height:36px;width:36px}
-.cols.six{grid-template-columns:repeat(6,minmax(180px,1fr));min-width:1140px;gap:10px}
-.swim{min-width:1140px}
+.cols.six{grid-template-columns:repeat(7,minmax(175px,1fr));min-width:1300px;gap:10px}
+.swim{min-width:1300px}
+.col.ongoing h3{color:var(--ink)}
+.col.ongoing .card{border-style:dashed;border-color:var(--hair)}
+.btn.tick{height:26px;padding:0 10px;font-size:12px}
+.btn.tick svg{width:12px;height:12px}
 .card{padding:9px 11px;gap:5px}
 .addform{padding:8px;margin-bottom:14px}
 .addform input[type=text],.addform select,.addform input[type=date]{height:32px}

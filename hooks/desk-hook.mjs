@@ -38,6 +38,7 @@ export function rules(p, s) {
     `- \`desk status\` shows the roadmap and to-dos with ids. Check it before adding, so you don't duplicate.`,
     `- Starting a piece of work: \`desk todo <id> doing\` (or \`desk todo add "<title>" --status doing\`). Finished: \`desk todo <id> done\`.`,
     `- Stuck: \`desk todo <id> blocked --why "<reason>"\`. Needs a person's answer or go: \`desk todo <id> waiting --waiting <name>\`. Delivered and awaiting feedback: \`desk todo <id> sent --to <name>\`.`,
+    `- Standing duties that never finish (e.g. logging hours for a monthly report) are "ongoing" to-dos with --every daily|weekly|monthly; each time you do one, run \`desk todo tick <id>\`.`,
     `- New follow-ups or decisions owed become to-dos. A milestone reached: \`desk milestone <id> done\` and set the next one to now.`,
     `One to-do per meaningful deliverable or decision, not per step, in plain English. If nothing changed, write nothing. \`desk help\` has the rest.`,
   ].join("\n");

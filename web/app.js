@@ -12,9 +12,9 @@ const I = {
   doc: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M4 1.8h5.5L12.5 5v9.2H4z"/><path d="M9.5 1.8V5h3M6.2 8.2h4M6.2 10.8h4"/></svg>',
 };
 const ME = "Jane";
-const STATUSES = [["todo", "To do"], ["doing", "Doing"], ["blocked", "Blocked"], ["waiting", "Waiting on"], ["sent", "Sent"], ["done", "Done"]];
+const STATUSES = [["ongoing", "Ongoing"], ["todo", "To do"], ["doing", "Doing"], ["blocked", "Blocked"], ["waiting", "Waiting on"], ["sent", "Sent"], ["done", "Done"]];
 const ST_KEYS = STATUSES.map((x) => x[0]);
-const EMPTY = { todo: "Nothing to do.", doing: "Nothing in progress.", blocked: "Nothing blocked.", waiting: "Not waiting on anyone.", sent: "Nothing out for feedback.", done: "Nothing finished recently." };
+const EMPTY = { ongoing: "No standing duties.", todo: "Nothing to do.", doing: "Nothing in progress.", blocked: "Nothing blocked.", waiting: "Not waiting on anyone.", sent: "Nothing out for feedback.", done: "Nothing finished recently." };
 const ORDER = { waiting: 0, working: 1, idle: 2 };
 
 const $ = (id) => document.getElementById(id);
@@ -25,7 +25,10 @@ const fmt = (s) => { if (!s) return ""; const d = new Date(s.length === 10 ? s +
 const fmtShort = (s) => s ? new Date(s + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "";
 const clock = (s) => { if (!s) return ""; const d = new Date(s); if (isNaN(d)) return ""; const today = iso(TODAY()) === iso(d); return today ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }); };
 const daysSince = (s) => Math.floor((Date.now() - new Date(s)) / 864e5);
-const dueState = (t) => { if (!t.due || ["done", "sent"].includes(t.status)) return ""; const d = (new Date(t.due + "T00:00:00") - TODAY()) / 864e5; return d < 0 ? "over" : d <= 3 ? "soon" : ""; };
+// An ongoing duty is due again one cycle after it was last done.
+const CYCLE = { daily: 1, weekly: 7, monthly: 31 };
+const ongoingLate = (t) => t.status === "ongoing" && (!t.lastDone || daysSince(t.lastDone) >= (CYCLE[t.every] || 7) + (t.every === "daily" ? 0 : 1));
+const dueState = (t) => { if (!t.due || ["done", "sent", "ongoing"].includes(t.status)) return ""; const d = (new Date(t.due + "T00:00:00") - TODAY()) / 864e5; return d < 0 ? "over" : d <= 3 ? "soon" : ""; };
 const needsMe = (t) => (t.status === "waiting" && t.waitingOn === ME) || (t.owner === ME && !["done", "sent"].includes(t.status));
 const initials = (n) => n.split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "·";
 
@@ -206,11 +209,12 @@ function renderBoard() {
     <label class="toggle"><input type="checkbox" id="alldone"${S.allDone ? " checked" : ""}> Show all done (default: last 7 days)</label></div>`;
   h += `<form class="addform" id="addform"><input type="text" id="a-title" placeholder="Add a to-do…" maxlength="200" autocomplete="off">
     <select id="a-where" aria-label="Project and track">${scopeP().flatMap((pp) => pp.tracks.map((t) => `<option value="${pp.id}|${t.id}"${p && S.track === t.id ? " selected" : ""}>${esc(p ? t.name : pp.name + " · " + t.name)}</option>`)).join("")}</select>
+    <select id="a-kind" aria-label="Kind"><option value="">One-off</option><option value="daily">Ongoing · every day</option><option value="weekly">Ongoing · every week</option><option value="monthly">Ongoing · every month</option></select>
     <select id="a-prio" aria-label="Priority"><option value="1">P1</option><option value="2" selected>P2</option><option value="3">P3</option></select>
     <select id="a-wait" aria-label="Who"></select>
     <input type="date" id="a-due" aria-label="Due date"><button class="btn primary" id="a-btn" disabled>Add</button></form><div id="lanes"></div>`;
   b.innerHTML = h;
-  const filt = (t) => (S.filter === "me" ? needsMe(t) : S.filter === "over" ? dueState(t) === "over" : true);
+  const filt = (t) => (S.filter === "me" ? needsMe(t) : S.filter === "over" ? dueState(t) === "over" || ongoingLate(t) : true);
   const lanes = $("lanes");
   if (p && !p.todos.some(inTrack) && S.filter === "all") lanes.innerHTML = fillBox(p, "The board");
   else if (S.filter !== "all") {
@@ -233,7 +237,8 @@ function renderBoard() {
   $("addform").onsubmit = async (e) => {
     e.preventDefault(); const v = $("a-title").value.trim(); if (!v) return;
     const [pid, track] = $("a-where").value.split("|"); const w = $("a-wait").value;
-    await op("todo.add", pid, { title: v, track, priority: +$("a-prio").value, due: $("a-due").value || "", waitingOn: w, owner: w ? "" : "Claude" }).catch(() => {});
+    const every = $("a-kind").value;
+    await op("todo.add", pid, every ? { title: v, track, status: "ongoing", every, owner: w || "Claude" } : { title: v, track, priority: +$("a-prio").value, due: $("a-due").value || "", waitingOn: w, owner: w ? "" : "Claude" }).catch(() => {});
     $("a-title").value = ""; $("a-due").value = ""; await refresh(); $("a-title")?.focus();
   };
   wireFill(p);
@@ -250,7 +255,8 @@ function cols(p, items, head) {
 }
 function card(p, t) {
   const ds = dueState(t), ms = p.milestones.find((m) => m.id === t.milestone);
-  let meta = `<span class="pill${t.priority === 1 ? " p1" : ""}">P${t.priority || 2}</span>`;
+  let meta = t.status === "ongoing" ? "" : `<span class="pill${t.priority === 1 ? " p1" : ""}">P${t.priority || 2}</span>`;
+  if (t.status === "ongoing") meta += `<span class="pill ${ongoingLate(t) ? "over" : "ok"}">↻ ${{ daily: "Every day", weekly: "Every week", monthly: "Every month" }[t.every] || "Every week"}</span><span>${t.lastDone ? "Last done " + fmt(t.lastDone) : "Not done yet"}</span>`;
   if (t.due) meta += `<span class="pill ${ds}">${ds === "over" ? "Overdue · " : "Due "}${fmt(t.due)}</span>`;
   if (t.status === "doing") { const n = daysSince(t.updatedAt); if (n >= 3) meta += `<span class="pill stale">No update ${n}d</span>`; }
   if (t.status === "done" && t.doneAt) meta += `<span class="pill ok">Done ${fmt(t.doneAt)}</span>`;
@@ -261,7 +267,7 @@ function card(p, t) {
   if (area) meta += `<span>${esc(area)}</span>`;
   if (t.owner && t.owner !== "Claude") meta += `<span>· ${esc(t.owner)}</span>`;
   const why = t.status === "blocked" && !t.why ? `<input class="whyin" id="why-${t.id}" data-why="${t.id}" data-p="${p.id}" placeholder="Why is it blocked?" maxlength="200">` : "";
-  return `<div class="card" draggable="true" tabindex="0" data-id="${t.id}" data-p="${p.id}"><div class="tt" data-title="${t.id}" title="Double-click to edit">${esc(t.title)}</div><div class="meta">${meta}</div>${why}${t.note ? `<details class="note"><summary>Note</summary><div>${md(t.note)}</div></details>` : ""}<div class="cardfoot"><span></span><button class="linkbtn${S.pendingDel === t.id ? " danger" : ""}" data-del="${t.id}" data-p="${p.id}">${S.pendingDel === t.id ? "Confirm remove" : "Remove"}</button></div></div>`;
+  return `<div class="card" draggable="true" tabindex="0" data-id="${t.id}" data-p="${p.id}"><div class="tt" data-title="${t.id}" title="Double-click to edit">${esc(t.title)}</div><div class="meta">${meta}</div>${why}${t.note ? `<details class="note"><summary>Note</summary><div>${md(t.note)}</div></details>` : ""}<div class="cardfoot">${t.status === "ongoing" ? `<button class="btn tick" data-tick="${t.id}" data-p="${p.id}">${I.check}Did it</button>` : "<span></span>"}<button class="linkbtn${S.pendingDel === t.id ? " danger" : ""}" data-del="${t.id}" data-p="${p.id}">${S.pendingDel === t.id ? "Confirm remove" : "Remove"}</button></div></div>`;
 }
 function wireCards() {
   const b = $("body"); let drag = null;
@@ -271,6 +277,7 @@ function wireCards() {
     if (S.pendingDel === id) { S.pendingDel = null; await op("todo.remove", x.dataset.p, { id }).catch(() => {}); refresh(); }
     else { S.pendingDel = id; render(); setTimeout(() => { if (S.pendingDel === id) { S.pendingDel = null; render(); } }, 4000); }
   }));
+  b.querySelectorAll("[data-tick]").forEach((x) => { x.onmousedown = (e) => e.stopPropagation(); x.onclick = async () => { x.disabled = true; await op("todo.tick", x.dataset.p, { id: x.dataset.tick }).catch(() => {}); toast("Noted: done today."); refresh(); }; });
   b.querySelectorAll("[data-wait]").forEach((x) => { x.onmousedown = (e) => e.stopPropagation(); x.onchange = async () => { await op("todo.set", x.dataset.p, { id: x.dataset.wait, waitingOn: x.value }).catch(() => {}); refresh(); }; });
   b.querySelectorAll("[data-why]").forEach((x) => { x.onmousedown = (e) => e.stopPropagation(); x.onkeydown = async (e) => { if (e.key === "Enter" && x.value.trim()) { await op("todo.set", x.dataset.p, { id: x.dataset.why, why: x.value.trim() }).catch(() => {}); refresh(); } }; x.onblur = async () => { if (x.value.trim()) { await op("todo.set", x.dataset.p, { id: x.dataset.why, why: x.value.trim() }).catch(() => {}); refresh(); } }; });
   b.querySelectorAll("[data-title]").forEach((x) => (x.ondblclick = () => {
@@ -281,7 +288,7 @@ function wireCards() {
     x.onblur = () => fin(true);
   }));
   b.querySelectorAll(".card").forEach((el) => {
-    el.ondragstart = (e) => { if (e.target.closest?.("details,button,select,input") || el.querySelector('[contenteditable="true"]')) { e.preventDefault(); return; } drag = el; el.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", el.dataset.id); } catch {} };
+    el.ondragstart = (e) => { if (e.target.closest?.("details,button,select,input,.tick") || el.querySelector('[contenteditable="true"]')) { e.preventDefault(); return; } drag = el; el.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", el.dataset.id); } catch {} };
     el.ondragend = () => el.classList.remove("dragging");
     el.onkeydown = async (e) => {
       if (e.target !== el || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
@@ -305,7 +312,7 @@ async function move(pid, t, st) {
 
 /* ---------- Roadmap ---------- */
 function progress(p, m) { const ts = p.todos.filter((t) => t.milestone === m.id); return [ts.filter((t) => t.status === "done").length, ts.length]; }
-const RANK = { blocked: 0, doing: 1, waiting: 2, todo: 3, sent: 4, done: 5 };
+const RANK = { ongoing: 6, blocked: 0, doing: 1, waiting: 2, todo: 3, sent: 4, done: 5 };
 function renderRoadmap() {
   const b = $("body"), p = proj();
   if (!p) {
@@ -329,7 +336,7 @@ function renderRoadmap() {
     h += `<section class="rtrack"><div class="rhead"><b>${esc(t.name)}</b>${now ? `<span class="pill" style="background:var(--accent-soft);color:var(--accent)">Now: ${esc(now.title)}</span>` : ""}</div>${ms.length || S.msForm === "new:" + t.id ? "" : fillBox(p, "The roadmap", t)}<div class="line">`;
     for (const m of ms) {
       if (S.msForm === m.id) { h += `<div class="msc ${m.status}"><span class="rl"></span><span class="node">${m.status === "done" ? I.check : ""}</span>${msForm(p, t.id, m)}</div>`; continue; }
-      const [d, n] = progress(p, m); const ts = p.todos.filter((x) => x.milestone === m.id).sort((a, c) => RANK[a.status] - RANK[c.status] || a.priority - c.priority);
+      const [d, n] = progress(p, m); const ts = p.todos.filter((x) => x.milestone === m.id && x.status !== "ongoing").sort((a, c) => RANK[a.status] - RANK[c.status] || a.priority - c.priority);
       h += `<div class="msc ${m.status}"><span class="rl"></span><span class="node">${m.status === "done" ? I.check : ""}</span><div class="mbox"><div class="md"><span>${m.status === "done" ? "Done" : m.status === "now" ? "Now" : "Next"}</span><span>${m.due ? (m.status === "done" ? "" : "Due ") + fmtShort(m.due) : ""}</span></div><div class="mt" data-editms="${m.id}" title="Click to edit">${esc(m.title)}</div>${n ? `<div class="bar" title="${d} of ${n} done"><i style="width:${Math.round((d / n) * 100)}%"></i></div>` : ""}
         <ul class="mlist">${ts.length ? ts.map((x) => `<li class="${x.status}"><span class="s"></span><span>${esc(x.title)}${x.status === "waiting" ? ` <span class="wt">· waiting on ${esc(x.waitingOn)}</span>` : x.status === "blocked" ? ' <span class="bl">· blocked</span>' : x.status === "sent" ? ` <span class="sn">· sent${x.sentTo ? " to " + esc(x.sentTo) : ""}</span>` : ""}</span></li>`).join("") : '<li style="color:var(--ink-3)">No to-dos yet</li>'}</ul></div></div>`;
     }

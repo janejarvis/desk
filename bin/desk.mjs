@@ -18,6 +18,9 @@ To-dos (statuses: ${STATUSES.join(", ")})
   desk todo set <id> [--title] [--status] [--p] [--due] [--milestone] [--track] [--note] ...
   desk todo remove <id>
     blocked needs --why; waiting takes --waiting <who>; sent takes --to <who>.
+  Ongoing duties (never finished, repeat --every daily|weekly|monthly):
+  desk todo add "<title>" --status ongoing --every weekly
+  desk todo tick <id>                         did it again (e.g. logged today's hours)
 
 Roadmap (milestone status: done, now, next)
   desk milestone add "<title>" [--track T] [--status S] [--due YYYY-MM-DD] [--note TEXT]
@@ -95,7 +98,7 @@ function fail(msg) { console.error(msg); process.exit(1); }
 
 const todoFields = () => ({
   title: flags.title, status: flags.status, priority: flags.p ?? flags.priority, due: flags.due, owner: flags.owner,
-  note: flags.note, why: flags.why, waitingOn: flags.waiting, sentTo: flags.to, milestone: flags.milestone,
+  note: flags.note, why: flags.why, waitingOn: flags.waiting, sentTo: flags.to, milestone: flags.milestone, every: flags.every,
 });
 const strip = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
 const say = (msg) => console.log(msg);
@@ -104,7 +107,7 @@ const say = (msg) => console.log(msg);
 function status() {
   const pid = project(), p = load(pid);
   const only = flags.track ? trackOf(p, flags.track) : null;
-  const label = { todo: "To do", doing: "Doing", blocked: "Blocked", waiting: "Waiting on", sent: "Sent", done: "Done" };
+  const label = { ongoing: "Ongoing", todo: "To do", doing: "Doing", blocked: "Blocked", waiting: "Waiting on", sent: "Sent", done: "Done" };
   say(`${p.name}  ·  ${tilde(expand(p.folder))}`);
   for (const t of p.tracks.filter((x) => !only || x.id === only)) {
     say(`\n## ${t.name}  (track id: ${t.id})`);
@@ -118,7 +121,7 @@ function status() {
       if (!its.length) continue;
       say(`${label[s]}:`);
       for (const x of its) {
-        const extra = [x.priority === 1 ? "P1" : "", x.due ? "due " + x.due : "", x.why ? "why: " + x.why : "", s === "waiting" && x.waitingOn ? "on " + x.waitingOn : "", s === "sent" && x.sentTo ? "to " + x.sentTo : "", x.milestone ? "milestone " + x.milestone : ""].filter(Boolean).join(" · ");
+        const extra = [x.priority === 1 ? "P1" : "", x.due ? "due " + x.due : "", x.why ? "why: " + x.why : "", s === "waiting" && x.waitingOn ? "on " + x.waitingOn : "", s === "sent" && x.sentTo ? "to " + x.sentTo : "", s === "ongoing" ? `every ${x.every || "week"}, last done ${x.lastDone ? x.lastDone.slice(0, 10) : "never"}` : "", x.milestone ? "milestone " + x.milestone : ""].filter(Boolean).join(" · ");
         say(`  - ${x.title}${extra ? "  (" + extra + ")" : ""}  [${x.id}]`);
       }
     }
@@ -148,6 +151,7 @@ try {
   else if (cmd === "open") await open();
   else if (cmd === "todo") {
     if (a1 === "add") { const pid = project(); const t = run("todo.add", pid, { ...strip(todoFields()), title: a2, track: track(pid), source: "claude" }); say(`Added [${t.id}] ${t.title} (${t.status})`); }
+    else if (a1 === "tick") { const t = run("todo.tick", owner("todos", a2), { id: a2 }); say(`[${t.id}] ${t.title}: done again ${t.lastDone.slice(0, 10)}`); }
     else if (a1 === "remove") { run("todo.remove", owner("todos", a2), { id: a2 }); say("Removed."); }
     else if (a1 === "set") { const pid = owner("todos", a2); const t = run("todo.set", pid, { ...strip(todoFields()), id: a2, track: flags.track }); say(`[${t.id}] ${t.title}: ${t.status}`); }
     else if (a1 && a2 && STATUSES.includes(a2)) { const t = run("todo.set", owner("todos", a1), { ...strip(todoFields()), id: a1, status: a2 }); say(`[${t.id}] ${t.title}: ${t.status}`); }
