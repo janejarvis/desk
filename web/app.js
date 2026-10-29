@@ -59,7 +59,7 @@ function toast(msg, err) { const t = $("toast"); t.textContent = msg; t.classNam
 
 // ---- state ----
 let D = { projects: [] };
-const S = { view: "all", track: "all", tab: "chats", filter: "all", allDone: false, panes: {}, focus: {}, listOpen: false, sheet: false, meet: {}, meetMode: "paste", msForm: null, pendingDel: null, msgs: {}, stream: {}, seen: {}, why: null };
+const S = { agents: {}, agentsAt: {}, helpersOpen: {}, view: "all", track: "all", tab: "chats", filter: "all", allDone: false, panes: {}, focus: {}, listOpen: false, sheet: false, meet: {}, meetMode: "paste", msForm: null, pendingDel: null, msgs: {}, stream: {}, seen: {}, why: null };
 try { const v = JSON.parse(localStorage.getItem("desk-ui") || "null"); if (v) Object.assign(S, { view: v.view || "all", track: v.track || "all", tab: v.tab || "chats", listOpen: !!v.listOpen, panes: v.panes || {} }); } catch {}
 const save = () => { try { localStorage.setItem("desk-ui", JSON.stringify({ view: S.view, track: S.track, tab: S.tab, listOpen: S.listOpen, panes: S.panes })); } catch {} };
 
@@ -512,7 +512,7 @@ function renderChats() {
   else h += `<div class="panes">${panes.map((id) => paneHTML(findS(id), key)).join("")}</div>`;
   b.innerHTML = h + `</div></div>`;
   wireChats(p, key);
-  for (const id of panes) { const x = findS(id); if (x) { ensureMsgs(x.s, x.p); markSeen(x); } }
+  for (const id of panes) { const x = findS(id); if (x) { ensureMsgs(x.s, x.p); markSeen(x); loadAgents(x); } }
 }
 function paneHTML({ p: sp, s }, key) {
   const label = `${sp.name} · ${trName(sp, s.track)}`; // shown on hover only: the pane header is just the session's name
@@ -524,8 +524,50 @@ function paneHTML({ p: sp, s }, key) {
      <input class="sname" data-rn="${s.id}" data-p="${sp.id}" id="sn-${s.id}" value="${esc(s.name)}" aria-label="Session name" maxlength="40" title="${esc(s.cwd)}"></div>
      <div class="hr"><span class="state ${st}">${st === "working" ? "Working" : st === "waiting" ? "New reply" : "Idle"}</span><button class="x" data-close="${s.id}" aria-label="Close this pane" title="Close pane">×</button></div></div>
    <div class="msgs" data-for="${s.id}">${body}</div>
+   <div class="helpers" data-helpers="${esc(s.id)}">${helpersHTML(s.id)}</div>
    <form class="composer" data-send="${s.id}" data-p="${sp.id}"><textarea id="say-${s.id}" rows="1" placeholder="Message ${esc(s.name)}…"></textarea>${live?.active ? `<button type="button" class="btn stop" data-stop="${s.id}" aria-label="Stop" title="Stop">${I.stop}</button>` : ""}<button class="btn primary" aria-label="Send" disabled>${I.send}</button></form></section>`;
 }
+/* ---------- Helper agents (subagents) at the bottom of each pane ---------- */
+const dur = (a, b) => { const s = Math.max(0, Math.round((new Date(b || Date.now()) - new Date(a)) / 1000)); return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`; };
+function helpersHTML(sid) {
+  const list = S.agents[sid];
+  if (!list || !list.length) return "";
+  const run = list.filter((a) => a.state === "running"), done = list.filter((a) => a.state === "done").length, stop = list.filter((a) => a.state === "stopped").length;
+  const open = S.helpersOpen[sid] ?? run.length > 0;
+  const sum = [run.length ? `<b>${run.length} running</b>` : "", done ? `${done} done` : "", stop ? `${stop} stopped` : ""].filter(Boolean).join(" · ");
+  // children sit under the helper that started them
+  const top = list.filter((a) => !a.parent || !list.some((b) => b.id === a.parent));
+  const rows = [];
+  const add = (a, lvl) => { rows.push([a, lvl]); for (const c of list.filter((x) => x.parent === a.id)) add(c, lvl + 1); };
+  top.forEach((a) => add(a, 0));
+  return `<button class="hhead${run.length ? " live" : ""}" data-htoggle="${esc(sid)}" aria-expanded="${open}"><span class="hico">${run.length ? '<i class="spin"></i>' : I.check}</span><span class="hlabel">Helpers</span><span class="hsum">${sum} <span class="hwhen">today</span></span><span class="chev">${open ? "▾" : "▸"}</span></button>`
+    + (open ? `<ul class="hlist">${rows.map(([a, lvl]) => `<li class="h ${a.state}" style="--lvl:${lvl}" title="${esc(a.type)}${a.background ? " · in the background" : ""}"><span class="hst">${a.state === "running" ? '<i class="spin"></i>' : a.state === "done" ? I.check : "–"}</span><span class="hd">${lvl ? '<span class="sub">↳</span>' : ""}${esc(a.description)}${a.state === "running" && a.doing ? `<span class="doing">${esc(a.doing)}</span>` : ""}</span><span class="ht">${esc(a.type.replace("general-purpose", "general"))}</span><span class="htime">${a.state === "running" ? dur(a.startedAt) : a.state === "done" ? dur(a.startedAt, a.endedAt) : "stopped"}</span></li>`).join("")}</ul>` : "");
+}
+function paintHelpers(sid) {
+  const el = document.querySelector(`[data-helpers="${CSS.escape(sid)}"]`);
+  if (el) { el.innerHTML = helpersHTML(sid); wireHelpers(el); }
+}
+function wireHelpers(root) {
+  root.querySelectorAll("[data-htoggle]").forEach((b) => (b.onclick = () => { const id = b.dataset.htoggle; const run = (S.agents[id] || []).some((a) => a.state === "running"); S.helpersOpen[id] = !(S.helpersOpen[id] ?? run); paintHelpers(id); }));
+}
+async function loadAgents({ p, s }, force) {
+  if (s.started === false) return;
+  if (!force && Date.now() - (S.agentsAt[s.id] || 0) < 3000) return;
+  S.agentsAt[s.id] = Date.now();
+  try {
+    const r = await api(`/api/agents?project=${p.id}&session=${encodeURIComponent(s.id)}`);
+    const before = JSON.stringify(S.agents[s.id] || []);
+    S.agents[s.id] = r.agents;
+    if (JSON.stringify(r.agents) !== before) paintHelpers(s.id);
+  } catch {}
+}
+// While Chats is open, keep the strips current: running helpers tick, finished ones turn green.
+setInterval(() => {
+  if (S.tab !== "chats" || document.hidden) return;
+  for (const id of S.panes[paneKey()] || []) { const x = findS(id); if (x) loadAgents(x, true); }
+  document.querySelectorAll(".h.running .htime").forEach((el) => { const li = el.closest("[data-helpers]"); if (li) paintHelpers(li.dataset.helpers); });
+}, 4000);
+
 function markSeen({ p, s }) {
   if (s.state !== "waiting" || !document.hasFocus() || S.seen[s.id] === s.lastAt) return;
   S.seen[s.id] = s.lastAt;
@@ -540,6 +582,7 @@ function wireChats(p, key) {
   b.querySelectorAll("[data-s]").forEach((x) => (x.onclick = () => { openPane(key, x.dataset.s); $("say-" + x.dataset.s)?.focus(); }));
   b.querySelectorAll("[data-close]").forEach((x) => (x.onclick = () => { S.panes[key] = S.panes[key].filter((id) => id !== x.dataset.close); render(); }));
   b.querySelectorAll("[data-pane]").forEach((x) => x.addEventListener("focusin", () => { if (S.focus[key] !== x.dataset.pane) { S.focus[key] = x.dataset.pane; b.querySelectorAll(".pane-c").forEach((y) => y.classList.toggle("focus", y === x && S.panes[key].length > 1)); } }));
+  wireHelpers(b);
   b.querySelectorAll("[data-stop]").forEach((x) => (x.onclick = () => api("/api/stop", { session: x.dataset.stop }).catch((e) => toast(e.message, true))));
   const sh = $("sheet");
   if (sh) {

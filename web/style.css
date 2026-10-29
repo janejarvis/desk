@@ -274,6 +274,33 @@ details.note div{padding-top:4px}
 .sheet .r{grid-column:1/-1;display:flex;gap:8px;justify-content:flex-end}
 .nochat{display:grid;place-items:center;height:100%;color:var(--ink-3);text-align:center;padding:30px}
 
+/* Helper agents strip, at the bottom of each chat pane */
+.helpers{margin:0 10px;border-top:1px solid var(--hair)}
+.helpers:empty{display:none}
+.hhead{width:100%;display:flex;align-items:center;gap:8px;padding:7px 4px;border:0;background:transparent;font-size:12px;color:var(--ink-2);text-align:left}
+.hhead:hover{color:var(--ink)}
+.hico{width:16px;height:16px;display:grid;place-items:center;color:var(--good)}
+.hico svg,.hst svg{width:12px;height:12px}
+.hlabel{font-weight:600;color:var(--ink);letter-spacing:-.005em}
+.hsum{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hsum b{color:var(--accent);font-weight:600}
+.hwhen{color:var(--ink-3)}
+.chev{color:var(--ink-3);font-size:10px}
+.hlist{list-style:none;margin:0 0 6px;padding:2px;max-height:148px;overflow:auto;display:flex;flex-direction:column;gap:2px;border-radius:12px;background:var(--soft)}
+.h{display:grid;grid-template-columns:16px minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:5px 8px 5px calc(8px + var(--lvl,0) * 14px);border-radius:9px;font-size:12px}
+.h.running{background:var(--glass-2);box-shadow:var(--card)}
+.hst{display:grid;place-items:center;color:var(--good)}
+.h.stopped .hst{color:var(--ink-3)}
+.hd{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+.h.done .hd,.h.stopped .hd{color:var(--ink-2)}
+.hd .sub{color:var(--ink-3);margin-right:4px}
+.hd .doing{margin-left:6px;font:500 10.5px/1 var(--mono);color:var(--accent);background:var(--accent-soft);padding:2px 5px;border-radius:4px}
+.ht{font:500 10.5px/1 var(--mono);color:var(--ink-3)}
+.htime{font:500 11px/1 var(--mono);color:var(--ink-3);font-variant-numeric:tabular-nums;min-width:52px;text-align:right}
+.h.running .htime{color:var(--accent)}
+.spin{display:block;width:11px;height:11px;border-radius:50%;border:2px solid var(--accent-soft);border-top-color:var(--accent);animation:hspin .8s linear infinite}
+@keyframes hspin{to{transform:rotate(360deg)}}
+
 /* Meetings */
 .mmode{display:inline-flex;margin-bottom:10px}
 .pastebox{display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:var(--r-md);background:var(--soft);border:1px solid var(--hair);margin-bottom:18px}
@@ -321,7 +348,9 @@ details.note div{padding-top:4px}
 .m pre{font:12.5px/1.5 var(--mono);background:var(--soft);padding:10px 12px;border-radius:10px;overflow:auto;white-space:pre;margin:6px 0}
 .m .steps{display:block;font:500 10.5px/1 var(--mono);opacity:.5;margin-top:6px}
 .m.live{border-color:var(--accent)}
-.workline{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-3);padding:2px 4px}
+.m.live .tx{display:block}
+.m.live .tx:empty{display:none}
+.workline{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-3);padding:2px 0;margin-top:4px;white-space:nowrap}
 .workline .typing{padding:0}
 .tnote{font-size:11.5px;color:var(--ink-3);margin-top:2px}
 .composer .btn.stop{background:var(--bad);color:#fff}

@@ -9,7 +9,7 @@ import { join, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { ROOT, DATA, expand, tilde, load, loadAll } from "./lib/store.mjs";
 import { run } from "./lib/ops.mjs";
-import { messages, lastWrite, live } from "./lib/sessions.mjs";
+import { messages, lastWrite, live, agents } from "./lib/sessions.mjs";
 import * as runner from "./lib/runner.mjs";
 
 const PORT = +(process.env.DESK_PORT || 4848);
@@ -122,6 +122,11 @@ const routes = {
     const p = load(q.get("project")); const s = p.sessions.find((x) => x.id === q.get("session"));
     if (!s) return { messages: [] };
     return { messages: s.started === false ? [] : convo(s), streaming: streaming.get(s.id) ?? null };
+  },
+  "GET /api/agents": (q) => {
+    const p = load(q.get("project")); const s = p.sessions.find((x) => x.id === q.get("session"));
+    if (!s || s.started === false) return { agents: [] };
+    return { agents: [s.id, ...(s.previousIds || [])].flatMap((id) => agents(id, s.cwd)).sort((a, b) => (b.startedAt || "").localeCompare(a.startedAt || "")) };
   },
   "GET /api/transcript": (q) => {
     const p = load(q.get("project")); const m = p.meetings.find((x) => x.id === q.get("id"));
