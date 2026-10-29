@@ -8,6 +8,7 @@ const I = {
   send: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5"/></svg>',
   stop: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>',
   folder: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"/></svg>',
+  grid: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1.2"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1.2"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1.2"/><rect x="9" y="9" width="4.5" height="4.5" rx="1.2"/></svg>',
   doc: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M4 1.8h5.5L12.5 5v9.2H4z"/><path d="M9.5 1.8V5h3M6.2 8.2h4M6.2 10.8h4"/></svg>',
 };
 const ME = "Jane";
@@ -133,10 +134,12 @@ function render() {
 
 function renderRail() {
   const r = $("rail");
-  let h = `<button class="ritem" aria-current="${S.view === "all"}" data-go="all"><span class="sw" style="background:var(--ink)"></span><span class="nm">All projects</span></button><div class="rail-label">Projects</div>`;
+  const unread = (ss) => ss.some((s) => stateOf(s) === "waiting");
+  const allS = P().flatMap((p) => p.sessions);
+  let h = `<button class="ritem" aria-current="${S.view === "all"}" data-go="all" title="All projects"><span class="pav${unread(allS) ? " unread" : ""}" style="background:var(--me);color:var(--me-ink)">${I.grid}</span><span class="nm">All projects</span></button><div class="rail-label">Projects</div>`;
   for (const p of P()) {
     const cur = S.view === p.id;
-    h += `<button class="ritem" aria-current="${cur}" data-go="${p.id}"><span class="sw" style="background:${p.color}"></span><span class="nm">${esc(p.name)}</span><span class="live">${p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;
+    h += `<button class="ritem" aria-current="${cur}" data-go="${p.id}" title="${esc(p.name)}"><span class="pav${unread(p.sessions) ? " unread" : ""}" style="background:${p.color}">${esc(p.name[0])}</span><span class="nm">${esc(p.name)}</span><span class="live">${p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;
     if (cur && p.tracks.length > 1) h += `<div class="subtracks">${p.tracks.map((t) => `<button data-track="${t.id}" aria-current="${S.track === t.id}"><span>${esc(t.name)}</span><span class="live">${p.sessions.filter((s) => s.track === t.id).map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`).join("")}</div>`;
   }
   r.innerHTML = h;
@@ -148,10 +151,11 @@ function renderRail() {
 
 function renderMain() {
   const p = proj();
-  let h = `<div class="top"><div class="titlerow"><div><div class="eyebrow">${p ? esc(p.folder) : "Every project · kept current by every Claude session"}</div><h1>${p ? esc(p.name) : "All projects"}</h1></div></div>
-    <div class="navrow"><div class="seg" role="tablist">${[["chats", "Chats"], ["roadmap", "Roadmap"], ["board", "Board"], ["meetings", "Meetings"]].map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}</button>`).join("")}</div>`;
+  const unread = allSessions().some((x) => stateOf(x.s) === "waiting");
+  let h = `<div class="top"><h1 title="${p ? esc(p.folder) : ""}">${p ? esc(p.name) : "All projects"}</h1>
+    <div class="seg" role="tablist">${[["chats", "Chats"], ["roadmap", "Roadmap"], ["board", "Board"], ["meetings", "Meetings"]].map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}${k === "chats" && unread ? '<span class="udot" title="New replies"></span>' : ""}</button>`).join("")}</div>`;
   if (p) h += `<div class="tracks">${p.tracks.length > 1 ? `<button class="chip" data-tr="all" aria-pressed="${S.track === "all"}">All tracks</button>` : ""}${p.tracks.map((t) => trackChip(p, t)).join("")}<button class="chip add" id="addtrack">${I.plus}Track</button></div>`;
-  h += `</div></div><div class="body${S.tab === "chats" ? " chat-body" : ""}" id="body"></div>`;
+  h += `</div><div class="body${S.tab === "chats" ? " chat-body" : ""}" id="body"></div>`;
   $("main").innerHTML = h;
   $("main").querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { S.tab = b.dataset.tab; render(); }));
   if (p) wireTracks(p);
@@ -499,14 +503,14 @@ function renderChats() {
   for (const id of panes) { const x = findS(id); if (x) { ensureMsgs(x.s, x.p); markSeen(x); } }
 }
 function paneHTML({ p: sp, s }, key) {
-  const label = S.view === "all" ? `${sp.name} · ${trName(sp, s.track)}` : trName(sp, s.track);
+  const tn = trName(sp, s.track), same = tn.toLowerCase() === s.name.toLowerCase();
+  const label = [S.view === "all" ? sp.name : "", same || (sp.tracks.length === 1 && S.view !== "all") ? "" : tn].filter(Boolean).join(" · ");
   const st = stateOf(s), live = S.stream[s.id], msgs = S.msgs[s.id]?.list;
   let body = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => `<div class="m ${m.who}">${md(m.text)}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
   if (live?.active) body += `<div class="m claude live" data-live="${esc(s.id)}"><span class="tx">${live.text ? md(live.text) : ""}</span><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">${live.tool ? "Working · " + esc(live.tool) : "Working"}</span></span></div>`;
-  return `<section class="pane-c${S.focus[key] === s.id && S.panes[key].length > 1 ? " focus" : ""}" data-pane="${s.id}">
-   <div class="convhead"><div class="l"><span class="trk" style="color:${sp.color}"><span class="sw" style="background:${sp.color};width:8px;height:8px"></span>${esc(label)}</span>
-     <input class="sname" data-rn="${s.id}" data-p="${sp.id}" id="sn-${s.id}" value="${esc(s.name)}" aria-label="Session name" maxlength="40">
-     <div class="sinfo">${I.folder}<code>${esc(s.cwd)}</code></div>${s.terminal ? '<div class="tnote">Also open in a terminal. Messages from here continue it as a copy, so the two stay separate.</div>' : ""}</div>
+  return `<section class="pane-c${S.focus[key] === s.id && S.panes[key].length > 1 ? " focus" : ""}${st === "waiting" ? " unread" : ""}" data-pane="${s.id}">
+   <div class="convhead"><div class="l"><span class="sw" style="background:${sp.color}"></span>${label ? `<span class="trk" style="color:${sp.color}">${esc(label)}</span>` : ""}
+     <input class="sname" data-rn="${s.id}" data-p="${sp.id}" id="sn-${s.id}" value="${esc(s.name)}" aria-label="Session name" maxlength="40" title="${esc(s.cwd)}"></div>
      <div class="hr"><span class="state ${st}">${st === "working" ? "Working" : st === "waiting" ? "New reply" : "Idle"}</span><button class="x" data-close="${s.id}" aria-label="Close this pane" title="Close pane">×</button></div></div>
    <div class="msgs" data-for="${s.id}">${body}</div>
    <form class="composer" data-send="${s.id}" data-p="${sp.id}"><textarea id="say-${s.id}" rows="1" placeholder="Message ${esc(s.name)}…"></textarea>${live?.active ? `<button type="button" class="btn stop" data-stop="${s.id}" aria-label="Stop" title="Stop">${I.stop}</button>` : ""}<button class="btn primary" aria-label="Send" disabled>${I.send}</button></form></section>`;

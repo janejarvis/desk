@@ -337,6 +337,72 @@ details.note div{padding-top:4px}
 .card .tt[contenteditable="true"]{outline:2px solid var(--accent-soft);border-radius:4px;cursor:text}
 .offline{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:var(--bad);color:#fff;font-size:13px;padding:8px 14px;border-radius:999px;z-index:60}
 
+/* ---- Compact (29 Oct: less padding, smaller type, more room for three tracks side by side) ---- */
+body{font-size:13px}
+.app{gap:10px;padding:10px}
+.main{padding:12px 16px 0}
+.top{flex-direction:row;align-items:center;flex-wrap:wrap;gap:8px 14px;padding-bottom:10px}
+h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
+.seg{padding:2px}
+.seg button{height:28px;padding:0 12px;font-size:12.5px}
+.tracks{margin-left:auto;gap:5px}
+.chip{height:26px;padding:0 10px;font-size:12px}
+.body{padding:14px 0 18px}
+.btn{height:32px;padding:0 13px;font-size:13px}
+.btn.round{width:32px}
+.slist{width:250px;padding:10px 10px 12px 0}
+.slist.collapsed{width:52px;padding-right:8px}
+.av{width:30px;height:30px;border-radius:9px;font-size:11px}
+.srow{padding:7px 8px}
+.srow .nm{font-size:13px}
+.srow .pv{font-size:12px}
+.panes{grid-auto-columns:minmax(300px,1fr)}
+.convhead{padding:8px 10px 7px 12px;align-items:center}
+.convhead .l{flex-direction:row;align-items:center;gap:7px}
+.convhead .sw{width:8px;height:8px;border-radius:50%}
+.trk{white-space:nowrap;font-size:10.5px}
+.sname{font-size:14px}
+.state{font-size:11px;padding:4px 8px}
+.x{width:24px;height:24px}
+.msgs{padding:12px;gap:8px}
+.m{max-width:92%;padding:7px 11px;border-radius:14px;font-size:13px;line-height:1.42}
+.m .when{margin-top:4px}
+.composer{padding:6px 10px 10px}
+.composer textarea{min-height:36px;padding:8px 12px;border-radius:15px}
+.composer .btn{height:36px;width:36px}
+.cols.six{grid-template-columns:repeat(6,minmax(180px,1fr));min-width:1140px;gap:10px}
+.swim{min-width:1140px}
+.card{padding:9px 11px;gap:5px}
+.addform{padding:8px;margin-bottom:14px}
+.addform input[type=text],.addform select,.addform input[type=date]{height:32px}
+.tools{margin-bottom:10px}
+.mbox{padding:11px;gap:6px}
+.mbox .mt{font-size:14px}
+.line{grid-auto-columns:minmax(210px,260px)}
+.rtrack + .rtrack{margin-top:20px}
+.box{padding:13px 15px}
+
+/* Unread replies pulse: sidebar, the Chats tab, the session list and the pane itself */
+@keyframes pulse-warn{0%{box-shadow:0 0 0 0 rgba(242,153,0,.6)}70%{box-shadow:0 0 0 7px rgba(242,153,0,0)}100%{box-shadow:0 0 0 0 rgba(242,153,0,0)}}
+.dot.waiting{animation:pulse-warn 1.6s infinite}
+.state.waiting{animation:pulse-warn 1.6s infinite}
+.udot{width:7px;height:7px;border-radius:50%;background:var(--warn);animation:pulse-warn 1.6s infinite}
+.pane-c.unread .convhead{background:var(--warn-soft)}
+.pav{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;flex:none;color:#fff;font:600 12.5px/1 var(--font)}
+.pav svg{width:14px;height:14px}
+.pav.unread{animation:pulse-warn 1.6s infinite}
+
+/* Sidebar: collapsed to icons, opens over the page while the mouse is on it */
+@media (min-width:901px){
+  .app{grid-template-columns:56px minmax(0,1fr)}
+  .main{grid-column:2}
+  .rail{position:fixed;top:10px;bottom:10px;left:10px;width:56px;z-index:30;padding:12px 8px;transition:width .18s var(--ease) .15s}
+  .rail:hover,.rail:has(:focus-visible){width:236px;transition-delay:0s;background:var(--glass-2);box-shadow:0 18px 50px rgba(15,23,42,.22)}
+  .rail:not(:hover):not(:has(:focus-visible)) :is(.brand .bt,.rail-label,.subtracks,.rail-foot,.ritem .nm,.ritem .live){display:none}
+  .brand{padding:0 6px 12px;white-space:nowrap}
+  .ritem{padding:6px;white-space:nowrap}
+  .rail-label{padding:10px 6px 4px}
+}
 @media (max-width:900px){
   html,body{height:auto}
   .app{grid-template-columns:1fr;height:auto;padding:12px 16px 56px}
