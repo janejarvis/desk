@@ -14,3 +14,6 @@ sessions and meetings. Push back on anything more.
 - Never test against the real sessions: use a copy of `data/projects` and `test/fake-claude.mjs`
   (see README). Sending from the Desk to a real session continues that session for real.
 - The approved design is the artifact https://claude.ai/artifact/KAW6udsRkTtk1BcVPwtvsT.
+- Projects never mix (her ruling, 29 Oct 2026): a project's page only offers its own people and
+  items, and a session on the Desk can only read and change its own project through `desk`
+  (`guard()` in bin/desk.mjs). Only the All projects overview shows them together. Keep it so.
