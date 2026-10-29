@@ -69,7 +69,8 @@ const findS = (id) => { for (const p of P()) { const s = p.sessions.find((x) => 
 const allTodos = () => scopeP().flatMap((p) => p.todos.filter(inTrack).map((t) => ({ p, t })));
 const allSessions = () => scopeP().flatMap((p) => p.sessions.filter(inTrack).map((s) => ({ p, s })));
 const allMeetings = () => scopeP().flatMap((p) => p.meetings.filter(inTrack).map((m) => ({ p, m }))).sort((a, b) => b.m.date.localeCompare(a.m.date));
-const people = () => [...new Set([ME, "Diogo", "João", ...P().flatMap((p) => p.todos.flatMap((t) => [t.waitingOn, t.sentTo, t.owner]))].filter((x) => x && x !== "Claude"))];
+// The people a project's cards can wait on: only that project's own, so projects never mix.
+const people = (p) => [...new Set([ME, ...(p?.todos || []).flatMap((t) => [t.waitingOn, t.sentTo, t.owner])].filter((x) => x && !["Claude", "Managers"].includes(x)))];
 const stateOf = (s) => (S.stream[s.id]?.active ? "working" : s.state);
 
 async function refresh() {
@@ -206,7 +207,7 @@ function renderBoard() {
   h += `<form class="addform" id="addform"><input type="text" id="a-title" placeholder="Add a to-do…" maxlength="200" autocomplete="off">
     <select id="a-where" aria-label="Project and track">${scopeP().flatMap((pp) => pp.tracks.map((t) => `<option value="${pp.id}|${t.id}"${p && S.track === t.id ? " selected" : ""}>${esc(p ? t.name : pp.name + " · " + t.name)}</option>`)).join("")}</select>
     <select id="a-prio" aria-label="Priority"><option value="1">P1</option><option value="2" selected>P2</option><option value="3">P3</option></select>
-    <select id="a-wait" aria-label="Who"><option value="">Claude does it</option>${people().map((n) => `<option value="${esc(n)}">Waiting on ${esc(n)}</option>`).join("")}</select>
+    <select id="a-wait" aria-label="Who"></select>
     <input type="date" id="a-due" aria-label="Due date"><button class="btn primary" id="a-btn" disabled>Add</button></form><div id="lanes"></div>`;
   b.innerHTML = h;
   const filt = (t) => (S.filter === "me" ? needsMe(t) : S.filter === "over" ? dueState(t) === "over" : true);
@@ -226,6 +227,8 @@ function renderBoard() {
   } else lanes.innerHTML = `<div class="hscroll"><div class="cols six">${cols(p, p.todos.filter(inTrack), true)}</div></div>`;
   b.querySelectorAll("[data-f]").forEach((x) => (x.onclick = () => { S.filter = x.dataset.f; render(); }));
   $("alldone").onchange = (e) => { S.allDone = e.target.checked; render(); };
+  const fillWho = () => { const pp = P().find((x) => x.id === $("a-where").value.split("|")[0]); $("a-wait").innerHTML = `<option value="">Claude does it</option>${people(pp).map((n) => `<option value="${esc(n)}">Waiting on ${esc(n)}</option>`).join("")}`; };
+  fillWho(); $("a-where").onchange = fillWho;
   $("a-title").oninput = (e) => { $("a-btn").disabled = !e.target.value.trim(); };
   $("addform").onsubmit = async (e) => {
     e.preventDefault(); const v = $("a-title").value.trim(); if (!v) return;
@@ -252,7 +255,7 @@ function card(p, t) {
   if (t.status === "doing") { const n = daysSince(t.updatedAt); if (n >= 3) meta += `<span class="pill stale">No update ${n}d</span>`; }
   if (t.status === "done" && t.doneAt) meta += `<span class="pill ok">Done ${fmt(t.doneAt)}</span>`;
   if (t.status === "blocked" && t.why) meta += `<span class="pill blk">Blocked · ${esc(t.why)}</span>`;
-  if (t.status === "waiting") meta += `<select class="waitsel" data-wait="${t.id}" data-p="${p.id}" aria-label="Waiting on">${people().map((n) => `<option${n === (t.waitingOn || ME) ? " selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
+  if (t.status === "waiting") meta += `<select class="waitsel" data-wait="${t.id}" data-p="${p.id}" aria-label="Waiting on">${people(p).map((n) => `<option${n === (t.waitingOn || ME) ? " selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
   if (t.status === "sent") meta += `<span class="pill sentp">Sent${t.sentTo ? " to " + esc(t.sentTo) : ""}${t.sentAt ? " · " + fmt(t.sentAt) : ""}</span>`;
   const area = [(S.view === "all" || p.tracks.length > 1) && S.track === "all" ? (S.view === "all" ? p.name + " · " : "") + trName(p, t.track) : "", ms ? ms.title : ""].filter(Boolean).join(" · ");
   if (area) meta += `<span>${esc(area)}</span>`;

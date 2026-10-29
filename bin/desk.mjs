@@ -65,8 +65,17 @@ function mine() {
   for (const p of loadAll()) { const s = p.sessions.find((x) => x.id === sid || (x.previousIds || []).includes(sid)); if (s) return (mineCache = { p, s }); }
   return (mineCache = null);
 }
+// A session on the Desk is walled into its own project: it can't read or change another one,
+// so one client's work never leaks into another's (29 Oct 2026, Jane's ruling).
+function own() { return process.env.DESK_PROJECT || mine()?.p.id || null; }
+function guard(pid) {
+  const o = own();
+  if (o && pid !== o) fail(`This session works on ${load(o).name}; it can't see or change ${load(pid).name}.`);
+  return pid;
+}
+const owner = (list, id) => guard(ownerOf(list, id));
 function project() {
-  if (flags.project) return projectId(flags.project);
+  if (flags.project) return guard(projectId(flags.project));
   if (process.env.DESK_PROJECT) return process.env.DESK_PROJECT;
   if (mine()) return mine().p.id;
   const cwd = process.cwd();
@@ -139,20 +148,20 @@ try {
   else if (cmd === "open") await open();
   else if (cmd === "todo") {
     if (a1 === "add") { const pid = project(); const t = run("todo.add", pid, { ...strip(todoFields()), title: a2, track: track(pid), source: "claude" }); say(`Added [${t.id}] ${t.title} (${t.status})`); }
-    else if (a1 === "remove") { run("todo.remove", ownerOf("todos", a2), { id: a2 }); say("Removed."); }
-    else if (a1 === "set") { const pid = ownerOf("todos", a2); const t = run("todo.set", pid, { ...strip(todoFields()), id: a2, track: flags.track }); say(`[${t.id}] ${t.title}: ${t.status}`); }
-    else if (a1 && a2 && STATUSES.includes(a2)) { const t = run("todo.set", ownerOf("todos", a1), { ...strip(todoFields()), id: a1, status: a2 }); say(`[${t.id}] ${t.title}: ${t.status}`); }
+    else if (a1 === "remove") { run("todo.remove", owner("todos", a2), { id: a2 }); say("Removed."); }
+    else if (a1 === "set") { const pid = owner("todos", a2); const t = run("todo.set", pid, { ...strip(todoFields()), id: a2, track: flags.track }); say(`[${t.id}] ${t.title}: ${t.status}`); }
+    else if (a1 && a2 && STATUSES.includes(a2)) { const t = run("todo.set", owner("todos", a1), { ...strip(todoFields()), id: a1, status: a2 }); say(`[${t.id}] ${t.title}: ${t.status}`); }
     else fail("Try: desk todo add \"<title>\" · desk todo <id> <status> · desk help");
   } else if (cmd === "milestone") {
     const f = strip({ title: flags.title, due: flags.due, status: flags.status, note: flags.note });
     if (a1 === "add") { const pid = project(); const m = run("milestone.add", pid, { ...f, title: a2, track: track(pid) }); say(`Added milestone [${m.id}] ${m.title} (${m.status})`); }
-    else if (a1 === "remove") { run("milestone.remove", ownerOf("milestones", a2), { id: a2 }); say("Removed."); }
-    else if (a1 === "set") { const m = run("milestone.set", ownerOf("milestones", a2), { ...f, id: a2 }); say(`[${m.id}] ${m.title}: ${m.status}`); }
-    else if (a1 && a2) { const m = run("milestone.set", ownerOf("milestones", a1), { ...f, id: a1, status: a2 }); say(`[${m.id}] ${m.title}: ${m.status}`); }
+    else if (a1 === "remove") { run("milestone.remove", owner("milestones", a2), { id: a2 }); say("Removed."); }
+    else if (a1 === "set") { const m = run("milestone.set", owner("milestones", a2), { ...f, id: a2 }); say(`[${m.id}] ${m.title}: ${m.status}`); }
+    else if (a1 && a2) { const m = run("milestone.set", owner("milestones", a1), { ...f, id: a1, status: a2 }); say(`[${m.id}] ${m.title}: ${m.status}`); }
     else fail("Try: desk milestone add \"<title>\" · desk milestone <id> <status> · desk help");
   } else if (cmd === "meeting" && a1 === "done") {
     if (!a2 || !flags.summary) fail("Usage: desk meeting done <id> --summary \"...\" --action \"...\"");
-    run("meeting.set", ownerOf("meetings", a2), { id: a2, status: "read", summary: flags.summary, actions: flags.action || [] });
+    run("meeting.set", owner("meetings", a2), { id: a2, status: "read", summary: flags.summary, actions: flags.action || [] });
     say(`Saved: summary and ${(flags.action || []).length} action(s). Jane picks which go on the board.`);
   } else if (cmd === "track") {
     const pid = project();
