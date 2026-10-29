@@ -143,7 +143,7 @@ function renderRail() {
   let h = `<button class="ritem" aria-current="${S.view === "all"}" data-go="all" title="All projects"><span class="pav${unread(allS) ? " unread" : ""}" style="background:var(--me);color:var(--me-ink)">${I.grid}</span><span class="nm">All projects</span></button><div class="rail-label">Projects</div>`;
   for (const p of P()) {
     const cur = S.view === p.id;
-    h += `<button class="ritem" aria-current="${cur}" data-go="${p.id}" title="${esc(p.name)}"><span class="pav${unread(p.sessions) ? " unread" : ""}" style="background:${p.color}">${esc(p.name[0])}</span><span class="nm">${esc(p.name)}</span><span class="live">${p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;
+    h += `<button class="ritem" aria-current="${cur}" data-go="${p.id}" title="${esc(p.name)}"><span class="pav${unread(p.sessions) ? " unread" : ""}${p.logo ? " logo" : ""}" style="background:${p.color}">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : esc(p.name[0])}</span><span class="nm">${esc(p.name)}</span><span class="live">${p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;
     if (cur && p.tracks.length > 1) h += `<div class="subtracks">${p.tracks.map((t) => `<button data-track="${t.id}" aria-current="${S.track === t.id}"><span>${esc(t.name)}</span><span class="live">${p.sessions.filter((s) => s.track === t.id).map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`).join("")}</div>`;
   }
   r.innerHTML = h;
