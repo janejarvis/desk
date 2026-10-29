@@ -120,8 +120,8 @@ function status() {
 
 // ---- open ----
 async function open() {
-  const port = process.env.DESK_PORT || 4747, url = `http://127.0.0.1:${port}`;
-  const up = async () => { try { return (await fetch(url + "/api/state")).ok; } catch { return false; } };
+  const port = process.env.DESK_PORT || 4848, url = `http://127.0.0.1:${port}`;
+  const up = async () => { try { const r = await fetch(url + "/api/state"); return r.ok && Array.isArray((await r.json()).projects); } catch { return false; } }; // the Desk, not another app on the port
   if (!(await up())) {
     const log = openSync(join(ROOT, "desk.log"), "a");
     spawn(process.execPath, [join(ROOT, "server.mjs")], { detached: true, stdio: ["ignore", log, log] }).unref();

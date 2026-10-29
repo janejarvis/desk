@@ -12,7 +12,7 @@ import { run } from "./lib/ops.mjs";
 import { messages, lastWrite, live } from "./lib/sessions.mjs";
 import * as runner from "./lib/runner.mjs";
 
-const PORT = +(process.env.DESK_PORT || 4747);
+const PORT = +(process.env.DESK_PORT || 4848);
 const WEB = join(ROOT, "web");
 const clients = new Set();
 const streaming = new Map(); // session id -> reply text so far (so a page opened mid-reply catches up)
