@@ -480,7 +480,10 @@ function ensureMsgs(s, p) {
 function renderChats() {
   const b = $("body"), p = proj(), list = allSessions(), key = paneKey();
   if (!S.panes[key]) S.panes[key] = defaultPanes();
-  S.panes[key] = S.panes[key].filter((id) => list.some((x) => x.s.id === id));
+  // A remembered pane can point at a session that has since moved on (continued as a copy):
+  // follow it by its earlier id, and fall back to the default panes if none are left.
+  S.panes[key] = [...new Set(S.panes[key].map((id) => list.find((x) => x.s.id === id || (x.s.previousIds || []).includes(id))?.s.id).filter(Boolean))];
+  if (!S.panes[key].length) S.panes[key] = defaultPanes();
   const panes = S.panes[key]; if (!panes.includes(S.focus[key])) S.focus[key] = panes[0];
   const col = !S.listOpen;
   let h = `<div class="chatwrap"><div class="slist${col ? " collapsed" : ""}"><div class="slhead">
