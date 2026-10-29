@@ -11,7 +11,7 @@ const I = {
   grid: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1.2"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1.2"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1.2"/><rect x="9" y="9" width="4.5" height="4.5" rx="1.2"/></svg>',
   doc: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M4 1.8h5.5L12.5 5v9.2H4z"/><path d="M9.5 1.8V5h3M6.2 8.2h4M6.2 10.8h4"/></svg>',
 };
-const ME = "Jane";
+const ME = "Diogo"; // the one person using the Desk
 const STATUSES = [["ongoing", "Ongoing"], ["todo", "To do"], ["doing", "Doing"], ["blocked", "Blocked"], ["waiting", "Waiting on"], ["sent", "Sent"], ["done", "Done"]];
 const ST_KEYS = STATUSES.map((x) => x[0]);
 const EMPTY = { ongoing: "No standing duties.", todo: "Nothing to do.", doing: "Nothing in progress.", blocked: "Nothing blocked.", waiting: "Not waiting on anyone.", sent: "Nothing out for feedback.", done: "Nothing finished recently." };

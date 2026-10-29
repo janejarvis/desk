@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// `desk` — how Claude sessions keep Jane's Desk current. Run `desk help`.
+// `desk` — how Claude sessions keep Diogo's Desk current. Run `desk help`.
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, existsSync, openSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT, HOME, expand, tilde, load, loadAll } from "../lib/store.mjs";
 import { run, projectId, trackOf, ownerOf, STATUSES } from "../lib/ops.mjs";
 
-const HELP = `desk — keep Jane's Desk current (roadmap, board, meetings).
+const HELP = `desk — keep Diogo's Desk current (roadmap, board, meetings).
 
 Read
   desk status [--project P] [--track T]      roadmap and to-dos with their ids
@@ -69,7 +69,7 @@ function mine() {
   return (mineCache = null);
 }
 // A session on the Desk is walled into its own project: it can't read or change another one,
-// so one client's work never leaks into another's (29 Oct 2026, Jane's ruling).
+// so one client's work never leaks into another's (29 Oct 2026, Diogo's ruling).
 function own() { return process.env.DESK_PROJECT || mine()?.p.id || null; }
 function guard(pid) {
   const o = own();

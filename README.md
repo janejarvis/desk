@@ -1,6 +1,6 @@
 # Desk
 
-Jane's project app: chats with Claude sessions side by side, a roadmap and a board per track,
+Diogo's project app: chats with Claude sessions side by side, a roadmap and a board per track,
 and meeting transcripts. Runs on this Mac only (http://127.0.0.1:4848).
 
 **Open it:** `desk open` (starts the server if it isn't running, then opens the browser).

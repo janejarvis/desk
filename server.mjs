@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Jane's Desk — a local app for her projects: chats with Claude sessions, roadmaps, the board and
+// Diogo's Desk — a local app for every project: chats with Claude sessions, roadmaps, the board and
 // meeting transcripts. 127.0.0.1 only. Data: data/projects/*.json (see lib/store.mjs).
 import http from "node:http";
 import { readFileSync, existsSync, mkdirSync, writeFileSync, watch, statSync, unlinkSync } from "node:fs";
@@ -86,17 +86,23 @@ const slug = (s) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,
 function readMeetingPrompt(p, m) {
   const path = join(expand(p.transcripts), m.file);
   return [
-    `Please read the meeting transcript at ${path} (${p.name} · ${p.tracks.find((t) => t.id === m.track)?.name}; meeting "${m.title}", ${m.date}). You manage what comes out of it: Jane doesn't pick anything.`,
+    `Please read the meeting transcript at ${path} (${p.name} · ${p.tracks.find((t) => t.id === m.track)?.name}; meeting "${m.title}", ${m.date}). You manage what comes out of it: Diogo (the user, who is usually in the meeting) doesn't pick anything.`,
     `1. Run \`desk status\` and read the board and roadmap as they stand.`,
-    `2. Put every action from the meeting on the board, so nothing is missed. If a to-do for it already exists, update that one (status, due date, note) instead of adding a copy; if the meeting finished something, mark it done; if it changed a milestone or its date, update the milestone. New ones: \`desk todo add "<title>"\` with the right status — waiting --waiting <name> when someone else owes it, todo or doing when it's ours — and the due date if one was said. Plain English titles, one per deliverable or decision.`,
-    `3. Follow this project's own standing rules for meetings (for example, logging the meeting and its hours where the project keeps them), and tick any ongoing duty you did with \`desk todo tick <id>\`.`,
-    `4. Record the meeting: \`desk meeting done ${m.id} --summary "<2 to 4 plain sentences>" --action "<action>" --action "<action>"\` — one --action per action, as it now reads on the board.`,
-    `Then reply with the summary and a short list of what you added, updated or finished on the board.`,
+    `2. Work out what the meeting DECIDED: for each topic, who will do what, by when, and what was found to be already solved or no longer needed. Decisions late in the meeting override earlier ideas.`,
+    `3. Make the board match those decisions, as one piece:`,
+    `   - Every action gets a card. If a card for it exists, rewrite it to match the decision: title, owner, status, who it waits on, due date. Don't just add a note: if the meeting gave the job to someone else, the card must now say so.`,
+    `   - Status from the decision: ours and started = doing; ours, not started = todo; someone else does it or owes us something = waiting --waiting <that person>; can't start until another card is done = blocked --why "after: <that card>".`,
+    `   - Merge cards that are now the same job (keep one, remove the rest). Remove cards the meeting made pointless (already exists, dropped, superseded), and mark done what it finished.`,
+    `   - Update milestones whose scope or date changed.`,
+    `4. Follow this project's own standing rules for meetings (for example, logging the meeting and its hours where the project keeps them), and tick any ongoing duty you did with \`desk todo tick <id>\`.`,
+    `5. Read the affected cards back with \`desk status\` and check they tell one consistent story with what was decided: right people, no duplicates, nothing left that the meeting settled. Fix anything that doesn't.`,
+    `6. Record the meeting: \`desk meeting done ${m.id} --summary "<2 to 4 plain sentences>" --action "<action>" --action "<action>"\` — one --action per action, as it now reads on the board.`,
+    `Then reply with the summary and a short list of what you added, changed (and why), merged, removed or finished on the board.`,
   ].join("\n");
 }
 
 const fillPrompt = (p, t) => [
-  `Jane's Desk shows a roadmap and a board for ${p.name} · ${t.name}, and they're empty or out of date. From what you know about this work (this conversation, the project's plan and notes), set them up with the desk command:`,
+  `Diogo's Desk shows a roadmap and a board for ${p.name} · ${t.name}, and they're empty or out of date. From what you know about this work (this conversation, the project's plan and notes), set them up with the desk command:`,
   `1. The track's milestones in order: \`desk milestone add "<title>" --status done|now|next\` (add --due YYYY-MM-DD only for a real date). Usually 3 to 6; exactly one "now".`,
   `2. The open to-dos under the right milestone with their real status: doing, blocked (--why), waiting (--waiting <name>), sent (--to <name>), or todo. Recently finished ones as done.`,
   `Only real work you know about; don't invent dates or tasks. Run \`desk status\` first so you don't duplicate anything. Reply with two lines on what you set up.`,

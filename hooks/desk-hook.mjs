@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// desk-hook.mjs — keeps Jane's Desk current from every Claude Code session, without being asked.
-// Replaces the work-board hook (2026-10-29: Jane moved her projects onto the Desk).
+// desk-hook.mjs — keeps Diogo's Desk current from every Claude Code session, without being asked.
+// Replaces the work-board hook (2026-10-29: Diogo moved every project onto the Desk).
 //
 //   SessionStart: a session on the Desk is told its project and track and how to use `desk`.
 //     A session in a project's folder that isn't on the Desk yet is told how to join.
@@ -32,20 +32,20 @@ export function locate(sid, cwd, ps) {
 export function rules(p, s) {
   const track = p.tracks.find((t) => t.id === s.track)?.name || s.track;
   return [
-    `JANE'S DESK (standing instruction; applies after resumes and compactions too).`,
-    `This session is on Jane's Desk as "${s.name}": project ${p.name}, track ${track}. The Desk is where she follows every project: a roadmap of milestones and a board of to-dos per track.`,
+    `DIOGO'S DESK (standing instruction; applies after resumes and compactions too).`,
+    `This session is on Diogo's Desk as "${s.name}": project ${p.name}, track ${track}. The Desk is where Diogo (the user) follows every project: a roadmap of milestones and a board of to-dos per track.`,
     `Keep it current as you work, without being asked, using the \`desk\` command (it already knows this session's project and track):`,
     `- \`desk status\` shows the roadmap and to-dos with ids. Check it before adding, so you don't duplicate.`,
     `- Starting a piece of work: \`desk todo <id> doing\` (or \`desk todo add "<title>" --status doing\`). Finished: \`desk todo <id> done\`.`,
     `- Stuck: \`desk todo <id> blocked --why "<reason>"\`. Needs a person's answer or go: \`desk todo <id> waiting --waiting <name>\`. Delivered and awaiting feedback: \`desk todo <id> sent --to <name>\`.`,
     `- Standing duties that never finish (e.g. logging hours for a monthly report) are "ongoing" to-dos with --every daily|weekly|monthly; each time you do one, run \`desk todo tick <id>\`.`,
-    `- Meetings: when you read a transcript, put every action on the board yourself (update existing to-dos rather than duplicating), then \`desk meeting done\`. Jane doesn't sort actions.`,
+    `- Meetings: when you read a transcript, put every action on the board yourself (update existing to-dos rather than duplicating), reconcile the affected cards as one piece (who does each now, merge duplicates, remove what the meeting made pointless), then \`desk meeting done\`. Diogo doesn't sort actions.`,
     `- New follow-ups or decisions owed become to-dos. A milestone reached: \`desk milestone <id> done\` and set the next one to now.`,
     `One to-do per meaningful deliverable or decision, not per step, in plain English. If nothing changed, write nothing. \`desk help\` has the rest.`,
   ].join("\n");
 }
 
-const joinHint = (p) => `This folder belongs to ${p.name} on Jane's Desk (her project app), but this session isn't on it. If this session works on ${p.name}, put it on the Desk with \`desk join --track "<${p.tracks.map((t) => t.name).join(" | ")}>" --name "<short name for what it does>"\`, then keep its to-dos current with \`desk\` (see \`desk help\`).`;
+const joinHint = (p) => `This folder belongs to ${p.name} on Diogo's Desk (the project app), but this session isn't on it. If this session works on ${p.name}, put it on the Desk with \`desk join --track "<${p.tracks.map((t) => t.name).join(" | ")}>" --name "<short name for what it does>"\`, then keep its to-dos current with \`desk\` (see \`desk help\`).`;
 
 const READ_ONLY_TOOLS = /^(Read|Grep|Glob|LS|WebSearch|WebFetch|ToolSearch|Skill|AskUserQuestion|TodoWrite|TaskList|TaskGet|ListAgents|ScheduleWakeup|EnterPlanMode|ExitPlanMode|ArtifactComments|ReportFindings)$/;
 const READ_ONLY_BASH = /^\s*(cd [^;&|]+(&&|;)\s*)?(cat|ls|head|tail|grep|rg|find|stat|wc|sed -n|awk|echo|pwd|which|file|du|df|git (status|log|diff|show|branch)|jq|sort|uniq|date|env|printenv|ps|lsof)\b/;
@@ -122,7 +122,7 @@ try {
     if (desk) { try { mkdirSync(STATE, { recursive: true }); writeFileSync(f, JSON.stringify({ ...st, lastDesk: now })); } catch {} process.exit(0); }
     if (work >= 2 && now - (st.lastDesk || 0) > QUIET_MS && now - (st.lastBounce || 0) > QUIET_MS) {
       try { mkdirSync(STATE, { recursive: true }); writeFileSync(f, JSON.stringify({ ...st, lastBounce: now })); } catch {}
-      process.stdout.write(JSON.stringify({ decision: "block", reason: "This turn changed things but Jane's Desk wasn't updated. Before ending, update this track's to-dos with `desk` (doing, done, blocked, waiting, sent, new follow-ups). If nothing on the board actually changed, just end the turn; don't explain.\n\n" + rules(hit.p, hit.s) }));
+      process.stdout.write(JSON.stringify({ decision: "block", reason: "This turn changed things but Diogo's Desk wasn't updated. Before ending, update this track's to-dos with `desk` (doing, done, blocked, waiting, sent, new follow-ups). If nothing on the board actually changed, just end the turn; don't explain.\n\n" + rules(hit.p, hit.s) }));
     }
   }
 } catch {}
