@@ -379,7 +379,7 @@ function renderMeetings() {
     <div class="r"><span class="hint">Saved to ${where} as date_name, then a session on that track reads it right away.</span><button class="btn primary" id="pt-send" disabled>${I.send}Send</button></div></form>`;
   else h += `<label class="upload" id="drop" for="mt-file"><span class="ic">${I.doc}</span><span class="tx"><b>Drop a meeting transcript here</b><span>.txt, .md, .vtt, .srt or .docx · saved to ${where}, then read by a session</span></span>
     <select id="mt-where" aria-label="Project and track">${dest}</select><span class="btn primary">Choose file</span><input type="file" id="mt-file" accept=".txt,.md,.vtt,.srt,.docx"></label>`;
-  if (!list.length) { b.innerHTML = h + `<div class="empty">No meetings yet. Paste a transcript above and a session reads it: a short summary and the actions, and you pick which go on the board.</div>`; wireMeetings(p, null); return; }
+  if (!list.length) { b.innerHTML = h + `<div class="empty">No meetings yet. Paste a transcript above and a session reads it: it writes a short summary and puts every action on the board.</div>`; wireMeetings(p, null); return; }
   h += `<div class="meetwrap"><div class="mtlist">`;
   let lastP = null;
   for (const { p: pp, m } of p ? list : [...list].sort((a, c) => P().indexOf(a.p) - P().indexOf(c.p) || c.m.date.localeCompare(a.m.date))) {
@@ -391,12 +391,12 @@ function renderMeetings() {
   h += `</div><div class="reader"><div class="rh"><div><h3>${esc(m.title)}</h3><div class="file">${esc(mp.transcripts)}/${esc(m.file)}</div></div><div class="meta"><span class="pill">${fmt(m.date)}</span><span class="pill">${esc(mp.name)} · ${esc(trName(mp, m.track))}</span></div></div>`;
   if (m.status === "read") {
     h += `<div class="box"><h2>Summary</h2><p>${md(m.summary || "")}</p></div>`;
-    if (m.actions.length) h += `<div class="box"><h2>Actions found</h2><ul class="acts">${m.actions.map((a, i) => `<li><span>${esc(a.title)}</span>${a.added ? '<span class="pill ok">On the board</span>' : `<button class="btn" data-addact="${i}">${I.plus}Add to board</button>`}</li>`).join("")}</ul></div>`;
+    if (m.actions.length) h += `<div class="box"><h2>Actions, on the board</h2><ul class="acts">${m.actions.map((a) => `<li><span>${esc(a.title)}</span></li>`).join("")}</ul></div>`;
   } else if (m.status === "reading") {
     const by = mp.sessions.find((s) => s.id === m.readBy);
-    h += `<div class="box"><h2>Being read</h2><p>${by ? `“${esc(by.name)}” is reading it.` : "A session is reading it."} The summary and the actions appear here; you pick which actions go on the board.</p><div class="reading"><button class="btn" id="mt-reread">Read it again</button></div></div>`;
+    h += `<div class="box"><h2>Being read</h2><p>${by ? `“${esc(by.name)}” is reading it.` : "A session is reading it."} The summary appears here and every action goes straight on the board.</p><div class="reading"><button class="btn" id="mt-reread">Read it again</button></div></div>`;
   } else {
-    h += `<div class="box"><h2>Not read yet</h2><p>Pick a session to read it. It writes a short summary and pulls out the actions; you choose which go on the board.</p>
+    h += `<div class="box"><h2>Not read yet</h2><p>Pick a session to read it. It writes a short summary and puts every action on the board.</p>
       <div class="reading"><select id="mt-by" aria-label="Session">${mp.sessions.map((s) => `<option value="${s.id}"${s.track === m.track ? " selected" : ""}>${esc(s.name)}</option>`).join("")}<option value="new">A new session</option></select><button class="btn primary" id="mt-read">Read it</button></div></div>`;
   }
   h += `<div class="box" style="gap:8px"><h2>Transcript</h2><pre class="transcript" id="mt-text">${esc(transcripts[m.id] ?? "Loading…")}</pre></div></div></div>`;
@@ -442,7 +442,6 @@ function wireMeetings(p, cur) {
   b.querySelectorAll("[data-m]").forEach((x) => (x.onclick = () => { S.meet[key] = x.dataset.m; render(); }));
   if (!cur) return;
   const { p: mp, m } = cur;
-  b.querySelectorAll("[data-addact]").forEach((x) => (x.onclick = async () => { x.disabled = true; await op("meeting.addAction", mp.id, { id: m.id, index: +x.dataset.addact }).catch(() => {}); toast("Added to the board as To do."); refresh(); }));
   const read = async (who) => { try { await api("/api/meeting/read", { project: mp.id, id: m.id, session: who }); toast("A session is reading it."); refresh(); } catch (e) { toast(e.message, true); } };
   if ($("mt-read")) $("mt-read").onclick = () => read($("mt-by").value);
   if ($("mt-reread")) $("mt-reread").onclick = () => read("auto");

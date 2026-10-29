@@ -86,10 +86,12 @@ const slug = (s) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,
 function readMeetingPrompt(p, m) {
   const path = join(expand(p.transcripts), m.file);
   return [
-    `Please read the meeting transcript at ${path} (${p.name} · ${p.tracks.find((t) => t.id === m.track)?.name}; meeting "${m.title}", ${m.date}).`,
-    `Then record what you found with one command:`,
-    `desk meeting done ${m.id} --summary "<2 to 4 plain sentences>" --action "<action>" --action "<action>"`,
-    `One --action per thing someone has to do, in plain English, naming the person when it isn't you. Don't put them on the board yourself: Jane picks which ones go there. Then reply with the summary.`,
+    `Please read the meeting transcript at ${path} (${p.name} · ${p.tracks.find((t) => t.id === m.track)?.name}; meeting "${m.title}", ${m.date}). You manage what comes out of it: Jane doesn't pick anything.`,
+    `1. Run \`desk status\` and read the board and roadmap as they stand.`,
+    `2. Put every action from the meeting on the board, so nothing is missed. If a to-do for it already exists, update that one (status, due date, note) instead of adding a copy; if the meeting finished something, mark it done; if it changed a milestone or its date, update the milestone. New ones: \`desk todo add "<title>"\` with the right status — waiting --waiting <name> when someone else owes it, todo or doing when it's ours — and the due date if one was said. Plain English titles, one per deliverable or decision.`,
+    `3. Follow this project's own standing rules for meetings (for example, logging the meeting and its hours where the project keeps them), and tick any ongoing duty you did with \`desk todo tick <id>\`.`,
+    `4. Record the meeting: \`desk meeting done ${m.id} --summary "<2 to 4 plain sentences>" --action "<action>" --action "<action>"\` — one --action per action, as it now reads on the board.`,
+    `Then reply with the summary and a short list of what you added, updated or finished on the board.`,
   ].join("\n");
 }
 

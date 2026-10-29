@@ -165,8 +165,8 @@ try {
     else fail("Try: desk milestone add \"<title>\" · desk milestone <id> <status> · desk help");
   } else if (cmd === "meeting" && a1 === "done") {
     if (!a2 || !flags.summary) fail("Usage: desk meeting done <id> --summary \"...\" --action \"...\"");
-    run("meeting.set", owner("meetings", a2), { id: a2, status: "read", summary: flags.summary, actions: flags.action || [] });
-    say(`Saved: summary and ${(flags.action || []).length} action(s). Jane picks which go on the board.`);
+    run("meeting.set", owner("meetings", a2), { id: a2, status: "read", summary: flags.summary, actions: (flags.action || []).map((title) => ({ title, added: true })) });
+    say(`Saved: summary and ${(flags.action || []).length} action(s), recorded as on the board.`);
   } else if (cmd === "track") {
     const pid = project();
     if (a1 === "add") { const t = run("track.add", pid, { name: a2 }); say(`Added track ${t.name} [${t.id}]`); }
