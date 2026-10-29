@@ -74,7 +74,8 @@ const allSessions = () => scopeP().flatMap((p) => p.sessions.filter(inTrack).map
 const allMeetings = () => scopeP().flatMap((p) => p.meetings.filter(inTrack).map((m) => ({ p, m }))).sort((a, b) => b.m.date.localeCompare(a.m.date));
 // The people a project's cards can wait on: only that project's own, so projects never mix.
 const people = (p) => [...new Set([ME, ...(p?.todos || []).flatMap((t) => [t.waitingOn, t.sentTo, t.owner])].filter((x) => x && !["Claude", "Managers"].includes(x)))];
-const stateOf = (s) => (S.stream[s.id]?.active ? "working" : s.state);
+// A session counts as working while it replies, or while one of its helpers is still running.
+const stateOf = (s) => (S.stream[s.id]?.active || (s.state === "idle" && (S.agents[s.id] || []).some((a) => a.state === "running")) ? "working" : s.state);
 
 async function refresh() {
   try { D = await api("/api/state"); $("offline")?.remove(); }
@@ -558,7 +559,7 @@ async function loadAgents({ p, s }, force) {
     const r = await api(`/api/agents?project=${p.id}&session=${encodeURIComponent(s.id)}`);
     const before = JSON.stringify(S.agents[s.id] || []);
     S.agents[s.id] = r.agents;
-    if (JSON.stringify(r.agents) !== before) paintHelpers(s.id);
+    if (JSON.stringify(r.agents) !== before) { const was = before.includes('"running"'), now = r.agents.some((a) => a.state === "running"); if (was !== now) render(); else paintHelpers(s.id); }
   } catch {}
 }
 // While Chats is open, keep the strips current: running helpers tick, finished ones turn green.
