@@ -6,6 +6,7 @@ const I = {
   pen: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 2.5l3 3-8 8H2.5v-3z"/></svg>',
   plus: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>',
   send: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5"/></svg>',
+  clip: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 7.5 8 13a3.5 3.5 0 0 1-5-5l6-6a2.3 2.3 0 0 1 3.3 3.3L6.5 11.2a1.2 1.2 0 0 1-1.7-1.7L10 4.3"/></svg>',
   stop: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>',
   folder: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"/></svg>',
   grid: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1.2"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1.2"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1.2"/><rect x="9" y="9" width="4.5" height="4.5" rx="1.2"/></svg>',
@@ -59,7 +60,7 @@ function toast(msg, err) { const t = $("toast"); t.textContent = msg; t.classNam
 
 // ---- state ----
 let D = { projects: [] };
-const S = { agents: {}, agentsAt: {}, helpersOpen: {}, view: "all", track: "all", tab: "chats", filter: "all", allDone: false, panes: {}, focus: {}, listOpen: false, sheet: false, meet: {}, meetMode: "paste", msForm: null, pendingDel: null, msgs: {}, stream: {}, seen: {}, why: null };
+const S = { attach: {}, agents: {}, agentsAt: {}, helpersOpen: {}, view: "all", track: "all", tab: "chats", filter: "all", allDone: false, panes: {}, focus: {}, listOpen: false, sheet: false, meet: {}, meetMode: "paste", msForm: null, pendingDel: null, msgs: {}, stream: {}, seen: {}, why: null };
 try { const v = JSON.parse(localStorage.getItem("desk-ui") || "null"); if (v) Object.assign(S, { view: v.view || "all", track: v.track || "all", tab: v.tab || "chats", listOpen: !!v.listOpen, panes: v.panes || {} }); } catch {}
 const save = () => { try { localStorage.setItem("desk-ui", JSON.stringify({ view: S.view, track: S.track, tab: S.tab, listOpen: S.listOpen, panes: S.panes })); } catch {} };
 
@@ -517,7 +518,7 @@ function renderChats() {
 function paneHTML({ p: sp, s }, key) {
   const label = `${sp.name} · ${trName(sp, s.track)}`; // shown on hover only: the pane header is just the session's name
   const st = stateOf(s), live = S.stream[s.id], msgs = S.msgs[s.id]?.list;
-  let body = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => `<div class="m ${m.who}">${md(m.text)}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
+  let body = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => `<div class="m ${m.who}">${m.who === "me" ? meText(m.text) : md(m.text)}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
   for (const e of s.pendingShell || []) body += `<div class="m shell"><div class="sh-h"><code>$ ${esc(e.cmd)}</code><span>${e.state === "running" ? "running in Terminal…" : `exit ${e.code ?? "?"} · goes with your next message`}</span></div>${e.state === "done" ? `<pre>${esc(e.output || "(no output)")}</pre>` : ""}</div>`;
   if (live?.active) body += `<div class="m claude live" data-live="${esc(s.id)}"><span class="tx">${live.text ? md(live.text) : ""}</span><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">${live.tool ? "Working · " + esc(live.tool) : "Working"}</span></span></div>`;
   return `<section class="pane-c${S.focus[key] === s.id && S.panes[key].length > 1 ? " focus" : ""}${st === "waiting" ? " unread" : ""}" data-pane="${s.id}">
@@ -526,7 +527,8 @@ function paneHTML({ p: sp, s }, key) {
      <div class="hr"><span class="state ${st}">${st === "working" ? "Working" : st === "waiting" ? "New reply" : "Idle"}</span><button class="x" data-close="${s.id}" aria-label="Close this pane" title="Close pane">×</button></div></div>
    <div class="msgs" data-for="${s.id}">${body}</div>
    <div class="helpers" data-helpers="${esc(s.id)}">${helpersHTML(s.id)}</div>
-   <form class="composer" data-send="${s.id}" data-p="${sp.id}"><textarea id="say-${s.id}" rows="1" placeholder="Message ${esc(s.name)}…  (! runs a command)"></textarea>${live?.active ? `<button type="button" class="btn stop" data-stop="${s.id}" aria-label="Stop" title="Stop">${I.stop}</button>` : ""}<button class="btn primary" aria-label="Send" disabled>${I.send}</button></form></section>`;
+   <div class="chips" data-chips="${esc(s.id)}">${chipsHTML(s.id)}</div>
+   <form class="composer" data-send="${s.id}" data-p="${sp.id}"><button type="button" class="btn round clip" data-clip="${esc(s.id)}" aria-label="Attach files" title="Attach photos, documents, videos…">${I.clip}</button><input type="file" multiple hidden data-file="${esc(s.id)}"><textarea id="say-${s.id}" rows="1" placeholder="Message ${esc(s.name)}…  (! runs a command)"></textarea>${live?.active ? `<button type="button" class="btn stop" data-stop="${s.id}" aria-label="Stop" title="Stop">${I.stop}</button>` : ""}<button class="btn primary" aria-label="Send" disabled>${I.send}</button></form></section>`;
 }
 /* ---------- Helper agents (subagents) at the bottom of each pane ---------- */
 const dur = (a, b) => { const s = Math.max(0, Math.round((new Date(b || Date.now()) - new Date(a)) / 1000)); return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`; };
@@ -569,6 +571,35 @@ setInterval(() => {
   document.querySelectorAll(".h.running .htime").forEach((el) => { const li = el.closest("[data-helpers]"); if (li) paintHelpers(li.dataset.helpers); });
 }, 4000);
 
+/* ---------- Attachments: photos, documents, videos… ---------- */
+const ATTACH_HEAD = "[Attached files, saved on this Mac — open and read them as needed:]";
+const kb = (n) => n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
+const isImg = (p) => /\.(png|jpe?g|gif|webp)$/i.test(p);
+function chipsHTML(sid) {
+  return (S.attach[sid] || []).map((a, i) => `<span class="chip-file${a.up ? " up" : ""}${a.err ? " err" : ""}" title="${esc(a.path || a.name)}">${a.thumb ? `<img src="${a.thumb}" alt="">` : `<span class="ext">${esc((a.name.match(/\.([^.]+)$/) || ["", "file"])[1].slice(0, 4))}</span>`}<span class="fn">${esc(a.name)}</span><span class="fs">${a.up ? "uploading…" : a.err ? esc(a.err) : kb(a.size)}</span><button type="button" data-unattach="${esc(sid)}|${i}" aria-label="Remove ${esc(a.name)}">×</button></span>`).join("");
+}
+function paintChips(sid) { const el = document.querySelector(`[data-chips="${CSS.escape(sid)}"]`); if (el) { el.innerHTML = chipsHTML(sid); wireChips(el); } const f = document.querySelector(`[data-send="${CSS.escape(sid)}"]`); if (f) f.querySelector('button[aria-label="Send"]').disabled = !f.querySelector("textarea").value.trim() && !(S.attach[sid] || []).some((a) => a.path); }
+function wireChips(root) { root.querySelectorAll("[data-unattach]").forEach((b) => (b.onclick = () => { const [sid, i] = b.dataset.unattach.split("|"); S.attach[sid].splice(+i, 1); paintChips(sid); })); }
+async function attachFiles(pid, sid, files) {
+  for (const f of files) {
+    const a = { name: f.name || `pasted-${Date.now()}.png`, size: f.size, up: true, thumb: f.type.startsWith("image/") ? URL.createObjectURL(f) : "" };
+    (S.attach[sid] ||= []).push(a); paintChips(sid);
+    try {
+      const r = await fetch(`/api/upload?project=${encodeURIComponent(pid)}&session=${encodeURIComponent(sid)}&name=${encodeURIComponent(a.name)}`, { method: "POST", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f });
+      const j = await r.json(); if (!r.ok) throw new Error(j.error || "Upload failed");
+      Object.assign(a, { up: false, path: j.path, type: f.type });
+    } catch (e) { Object.assign(a, { up: false, err: e.message }); }
+    paintChips(sid);
+  }
+}
+// What she sees of her own message: the text, then the attachments as thumbnails or file chips.
+function meText(t) {
+  const i = t.indexOf(ATTACH_HEAD);
+  if (i < 0) return md(t);
+  const files = t.slice(i + ATTACH_HEAD.length).split("\n").map((l) => l.match(/^- (\/\S.*?)(?:\s+\(.*\))?$/)?.[1]).filter(Boolean);
+  return md(t.slice(0, i).trim()) + `<span class="att">${files.map((p) => isImg(p) ? `<a href="/api/file?path=${encodeURIComponent(p)}" target="_blank" rel="noopener"><img src="/api/file?path=${encodeURIComponent(p)}" alt="" loading="lazy"></a>` : `<span class="chip-file sent"><span class="ext">${esc((p.match(/\.([^.]+)$/) || ["", "file"])[1].slice(0, 4))}</span><span class="fn">${esc(p.split("/").pop().replace(/^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}_/, ""))}</span></span>`).join("")}</span>`;
+}
+
 function markSeen({ p, s }) {
   if (s.state !== "waiting" || !document.hasFocus() || S.seen[s.id] === s.lastAt) return;
   S.seen[s.id] = s.lastAt;
@@ -601,20 +632,33 @@ function wireChats(p, key) {
     nm.onchange = async () => { if (nm.value.trim()) { await op("session.set", nm.dataset.p, { id: nm.dataset.rn, name: nm.value.trim() }).catch(() => {}); refresh(); } };
     nm.onkeydown = (e) => { if (e.key === "Enter") nm.blur(); };
   });
+  wireChips(b);
+  b.querySelectorAll("[data-clip]").forEach((c) => { const inp = c.parentElement.querySelector("[data-file]"); c.onclick = () => inp.click(); inp.onchange = () => { attachFiles(c.closest("form").dataset.p, c.dataset.clip, [...inp.files]); inp.value = ""; }; });
+  b.querySelectorAll("[data-pane]").forEach((pane) => {
+    const sid = pane.dataset.pane, pid = pane.querySelector("[data-send]")?.dataset.p;
+    pane.ondragover = (e) => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); pane.classList.add("dropping"); } };
+    pane.ondragleave = (e) => { if (!pane.contains(e.relatedTarget)) pane.classList.remove("dropping"); };
+    pane.ondrop = (e) => { if (!e.dataTransfer.files.length) return; e.preventDefault(); pane.classList.remove("dropping"); attachFiles(pid, sid, [...e.dataTransfer.files]); };
+  });
   b.querySelectorAll("[data-send]").forEach((form) => {
     const sid = form.dataset.send, ta = form.querySelector("textarea"), btn = form.querySelector('button[aria-label="Send"]');
+    ta.onpaste = (e) => { const fs = [...(e.clipboardData?.files || [])]; if (fs.length) { e.preventDefault(); attachFiles(form.dataset.p, sid, fs); } };
     try { const d = sessionStorage.getItem("draft-" + sid); if (d) { ta.value = d; btn.disabled = false; } } catch {}
     const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 160) + "px"; };
     grow();
-    ta.oninput = () => { btn.disabled = !ta.value.trim(); grow(); try { sessionStorage.setItem("draft-" + sid, ta.value); } catch {} };
+    ta.oninput = () => { btn.disabled = !ta.value.trim() && !(S.attach[sid] || []).some((a) => a.path); grow(); try { sessionStorage.setItem("draft-" + sid, ta.value); } catch {} };
     ta.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } };
     form.onsubmit = async (e) => {
-      e.preventDefault(); const v = ta.value.trim(); if (!v) return;
-      if (v.startsWith("!")) { // like ! in Claude Code: run it in a real terminal, output goes with the next message
+      e.preventDefault(); let v = ta.value.trim();
+      const files = (S.attach[sid] || []).filter((a) => a.path);
+      if ((S.attach[sid] || []).some((a) => a.up)) { toast("Still uploading — one moment."); return; }
+      if (!v && !files.length) return;
+      if (v.startsWith("!") && !files.length) { // like ! in Claude Code: run it in a real terminal, output goes with the next message
         try { await api("/api/shell", { project: form.dataset.p, session: sid, cmd: v.slice(1) }); ta.value = ""; try { sessionStorage.removeItem("draft-" + sid); } catch {} toast("Opened in Terminal. Its output lands here when it finishes."); refresh(); }
         catch (err) { toast(err.message, true); }
         return;
       }
+      if (files.length) { v = (v || "Here are some files.") + "\n\n" + ATTACH_HEAD + "\n" + files.map((a) => `- ${a.path}  (${a.type || "file"}, ${kb(a.size)})`).join("\n"); S.attach[sid] = []; paintChips(sid); }
       const list = S.msgs[sid]?.list || []; list.push({ who: "me", text: v, at: new Date().toISOString() });
       S.msgs[sid] = { ...(S.msgs[sid] || {}), list };
       ta.value = ""; try { sessionStorage.removeItem("draft-" + sid); } catch {}

@@ -2,7 +2,7 @@
 // Diogo's Desk — a local app for every project: chats with Claude sessions, roadmaps, the board and
 // meeting transcripts. 127.0.0.1 only. Data: data/projects/*.json (see lib/store.mjs).
 import http from "node:http";
-import { readFileSync, existsSync, mkdirSync, writeFileSync, watch, statSync, unlinkSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, watch, statSync, unlinkSync, createWriteStream, createReadStream } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir, homedir } from "node:os";
 const HOME_DIR = homedir();
@@ -164,6 +164,38 @@ const fillPrompt = (p, t) => [
   `Only real work you know about; don't invent dates or tasks. Run \`desk status\` first so you don't duplicate anything. Reply with two lines on what you set up.`,
 ].join("\n");
 
+// ---- attachments (photos, documents, videos…) for a chat ----
+// Saved under uploads/<project>/ on this Mac; the message then lists their paths so the session
+// reads them itself. Only files in uploads/ are ever served back (for thumbnails).
+const UPLOADS = join(ROOT, "uploads");
+const MAX_UPLOAD = 500 * 1024 * 1024;
+async function upload(req, res, q) {
+  try {
+    const p = load(q.get("project"));
+    const raw = String(q.get("name") || "file").split(/[\\/]/).pop();
+    const ext = (raw.match(/\.[A-Za-z0-9]{1,8}$/) || [""])[0].toLowerCase();
+    const base = raw.slice(0, raw.length - ext.length).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "file";
+    const dir = join(UPLOADS, p.id); mkdirSync(dir, { recursive: true });
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+    let name = `${stamp}_${base}${ext}`, n = 2;
+    while (existsSync(join(dir, name))) name = `${stamp}_${base}-${n++}${ext}`;
+    const path = join(dir, name);
+    const out = createWriteStream(path);
+    let size = 0, tooBig = false;
+    for await (const chunk of req) { size += chunk.length; if (size > MAX_UPLOAD) { tooBig = true; break; } if (!out.write(chunk)) await new Promise((r) => out.once("drain", r)); }
+    await new Promise((r) => out.end(r));
+    if (tooBig) { try { unlinkSync(path); } catch {} return json(res, 413, { error: "That file is over 500 MB." }); }
+    json(res, 200, { path, name: raw, size, type: req.headers["content-type"] || "" });
+  } catch (e) { json(res, 400, { error: e.message }); }
+}
+function sendFile(res, path) {
+  const f = String(path || "");
+  if (!f.startsWith(UPLOADS + "/") || f.includes("..") || !existsSync(f)) { res.writeHead(404); return res.end("Not found"); }
+  const t = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".heic": "image/heic", ".mp4": "video/mp4", ".mov": "video/quicktime", ".pdf": "application/pdf" }[extname(f).toLowerCase()] || "application/octet-stream";
+  res.writeHead(200, { "Content-Type": t, "Cache-Control": "max-age=86400" });
+  createReadStream(f).pipe(res);
+}
+
 // ---- HTTP ----
 async function body(req) {
   let b = ""; for await (const c of req) { b += c; if (b.length > 5e6) throw Object.assign(new Error("That's too large."), { user: true }); }
@@ -256,6 +288,9 @@ const server = http.createServer(async (req, res) => {
       req.on("close", () => { clients.delete(res); clearInterval(ping); });
       return;
     }
+    // Attachments: the file's bytes are the body (no JSON), streamed to uploads/<project>/.
+    if (req.method === "POST" && url.pathname === "/api/upload") return upload(req, res, url.searchParams);
+    if (req.method === "GET" && url.pathname === "/api/file") return sendFile(res, url.searchParams.get("path"));
     const route = routes[`${req.method} ${url.pathname}`];
     if (route) {
       if (req.method === "POST" && req.headers["content-type"] !== "application/json") return json(res, 415, { error: "JSON only." });
