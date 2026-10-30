@@ -2,11 +2,11 @@
 // Diogo's Desk — a local app for every project: chats with Claude sessions, roadmaps, the board and
 // meeting transcripts. 127.0.0.1 only. Data: data/projects/*.json (see lib/store.mjs).
 import http from "node:http";
-import { readFileSync, existsSync, mkdirSync, writeFileSync, watch, statSync, unlinkSync, createWriteStream, createReadStream, readdirSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, watch, statSync, unlinkSync, createWriteStream, createReadStream, readdirSync, rmSync } from "node:fs";
+import { execFileSync, execFile } from "node:child_process";
 import { tmpdir, homedir } from "node:os";
 const HOME_DIR = homedir();
-import { join, extname } from "node:path";
+import { join, extname, dirname, basename } from "node:path";
 import { randomUUID } from "node:crypto";
 import { ROOT, DATA, expand, tilde, load, loadAll } from "./lib/store.mjs";
 import { run } from "./lib/ops.mjs";
@@ -204,28 +204,65 @@ const fileOf = (pid, id) => { const f = (load(pid).files || []).find((x) => x.id
 const MIME = { ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml", ".heic": "image/heic",
   ".mp4": "video/mp4", ".mov": "video/quicktime", ".m4v": "video/mp4", ".webm": "video/webm", ".html": "text/html; charset=utf-8", ".htm": "text/html; charset=utf-8",
   ".md": "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8", ".csv": "text/plain; charset=utf-8", ".json": "text/plain; charset=utf-8" };
-function viewFile(res, q) {
-  const f = fileOf(q.get("project"), q.get("id"));
-  const size = statSync(f.path).size;
-  res.writeHead(200, { "Content-Type": MIME[extname(f.path).toLowerCase()] || "application/octet-stream", "Content-Length": size, "Cache-Control": "no-cache",
-    // a page Claude made runs in a sandbox: it can't reach the Desk or its data
-    "Content-Security-Policy": "sandbox allow-scripts allow-popups allow-forms" });
-  createReadStream(f.path).pipe(res);
-}
-function thumb(res, q) {
-  const f = fileOf(q.get("project"), q.get("id"));
-  mkdirSync(THUMBS, { recursive: true });
-  const key = join(THUMBS, `${f.id}-${Math.round(statSync(f.path).mtimeMs)}.png`);
-  if (!existsSync(key)) {
-    const tmp = join(tmpdir(), "desk-ql-" + randomUUID().slice(0, 8)); mkdirSync(tmp, { recursive: true });
-    try { execFileSync("qlmanage", ["-t", "-s", "600", "-o", tmp, f.path], { timeout: 20000, stdio: "ignore" }); } catch {}
-    const made = existsSync(tmp) ? readdirSync(tmp).find((x) => x.endsWith(".png")) : null;
-    if (!made) { res.writeHead(404); return res.end(); }
-    writeFileSync(key, readFileSync(join(tmp, made)));
+// /f/<project>/<id>/<name> serves the file itself; /f/<project>/<id>/<other path> serves files next
+// to it (a page's own images and styles), never outside its folder.
+function viewFile(res, pathname) {
+  const [, , pid, id, ...rest] = pathname.split("/").map(decodeURIComponent);
+  const f = fileOf(pid, id), dir = dirname(f.path);
+  const want = rest.join("/");
+  let target = f.path;
+  if (want && want !== basename(f.path)) {
+    target = join(dir, want);
+    if (!target.startsWith(dir + "/") || target.includes("/../") || !existsSync(target) || !statSync(target).isFile()) { res.writeHead(404); return res.end(); }
   }
+  const ext = extname(target).toLowerCase();
+  const head = { "Content-Type": MIME[ext] || MIME_EXTRA[ext] || "application/octet-stream", "Content-Length": statSync(target).size, "Cache-Control": "no-cache" };
+  // A page Claude made runs sealed off: it can't reach the Desk or its data. (Only pages: Chrome
+  // won't show a PDF in a sandboxed frame.)
+  if (ext === ".html" || ext === ".htm") head["Content-Security-Policy"] = "sandbox allow-scripts allow-popups allow-forms";
+  res.writeHead(200, head);
+  createReadStream(target).pipe(res);
+}
+const MIME_EXTRA = { ".css": "text/css", ".js": "text/javascript", ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".glb": "model/gltf-binary", ".gltf": "model/gltf+json", ".stl": "model/stl", ".3mf": "model/3mf" };
+
+// Previews come from macOS Quick Look, made in the background two at a time (it's slow and must
+// never hold up the server), cached by file and change time, and prepared ahead for every file.
+const thumbJobs = new Map(); let thumbActive = 0; const thumbQueue = [];
+const thumbKey = (f) => join(THUMBS, `${f.id}-${Math.round(statSync(f.path).mtimeMs)}.png`);
+const NO_THUMB = new Set();
+function makeThumb(f) {
+  const key = thumbKey(f);
+  if (existsSync(key)) return Promise.resolve(key);
+  if (NO_THUMB.has(key) || f.kind === "print" || f.kind === "archive") return Promise.resolve(null); // Quick Look can't draw these; the page draws STLs itself
+  if (thumbJobs.has(key)) return thumbJobs.get(key);
+  const job = new Promise((resolve) => {
+    thumbQueue.push(() => {
+      thumbActive++;
+      const tmp = join(tmpdir(), "desk-ql-" + randomUUID().slice(0, 8)); mkdirSync(tmp, { recursive: true });
+      execFile("qlmanage", ["-t", "-s", "600", "-o", tmp, f.path], { timeout: 30000 }, () => {
+        let made = null; try { made = readdirSync(tmp).find((x) => x.endsWith(".png")); } catch {}
+        if (made) { mkdirSync(THUMBS, { recursive: true }); writeFileSync(key, readFileSync(join(tmp, made))); } else NO_THUMB.add(key);
+        try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+        thumbActive--; thumbJobs.delete(key); resolve(made ? key : null); nextThumb();
+      });
+    });
+    nextThumb();
+  });
+  thumbJobs.set(key, job);
+  return job;
+}
+function nextThumb() { while (thumbActive < 2 && thumbQueue.length) thumbQueue.shift()(); }
+async function thumb(res, q) {
+  const f = fileOf(q.get("project"), q.get("id"));
+  const key = await makeThumb(f);
+  if (!key) { res.writeHead(404); return res.end(); }
   res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "max-age=86400" });
   createReadStream(key).pipe(res);
 }
+function warmThumbs() {
+  for (const p of loadAll()) for (const f of p.files || []) if (f.path && f.kind !== "image" && existsSync(f.path)) makeThumb(f).catch(() => {});
+}
+setTimeout(warmThumbs, 3000); setInterval(warmThumbs, 10 * 60e3);
 
 // Artifacts a session publishes land in Files on their own: new transcript lines are checked every
 // 30 seconds (from where the server started; earlier ones were filled in once, by hand).
@@ -338,8 +375,8 @@ const server = http.createServer(async (req, res) => {
     // Attachments: the file's bytes are the body (no JSON), streamed to uploads/<project>/.
     if (req.method === "POST" && url.pathname === "/api/upload") return upload(req, res, url.searchParams);
     if (req.method === "GET" && url.pathname === "/api/file") return sendFile(res, url.searchParams.get("path"));
-    if (req.method === "GET" && url.pathname === "/api/fileview") return viewFile(res, url.searchParams);
-    if (req.method === "GET" && url.pathname === "/api/thumb") return thumb(res, url.searchParams);
+    if (req.method === "GET" && url.pathname.startsWith("/f/")) return viewFile(res, url.pathname);
+    if (req.method === "GET" && url.pathname === "/api/thumb") return await thumb(res, url.searchParams);
     const route = routes[`${req.method} ${url.pathname}`];
     if (route) {
       if (req.method === "POST" && req.headers["content-type"] !== "application/json") return json(res, 415, { error: "JSON only." });

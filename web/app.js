@@ -575,10 +575,12 @@ setInterval(() => {
 const KINDS = [["all", "All"], ["pdf", "PDFs"], ["doc", "Documents"], ["sheet", "Sheets"], ["slides", "Slides"], ["image", "Images"], ["video", "Videos"], ["html", "Pages"], ["artifact", "Artifacts"], ["print", "Print files"], ["text", "Notes"], ["other", "Other"]];
 const KLABEL = Object.fromEntries(KINDS);
 const fq = (p, f) => `project=${encodeURIComponent(p.id)}&id=${encodeURIComponent(f.id)}`;
+const fsrc = (p, f) => `/f/${encodeURIComponent(p.id)}/${encodeURIComponent(f.id)}/${encodeURIComponent(f.path.split("/").pop())}`;
 const fileName = (f) => f.url ? "claude.ai artifact" : f.path.split("/").pop();
 function fileThumb(p, f) {
   if (f.kind === "artifact") return `<span class="fthumb art"><span>✦</span></span>`;
-  if (f.kind === "image") return `<span class="fthumb"><img src="/api/fileview?${fq(p, f)}" alt="" loading="lazy"></span>`;
+  if (f.kind === "image") return `<span class="fthumb"><img src="${fsrc(p, f)}" alt="" loading="lazy"></span>`;
+  if (/\.stl$/i.test(f.path)) return `<span class="fthumb" data-stl="${fsrc(p, f)}">${STILLS.get(fsrc(p, f)) ? `<img src="${STILLS.get(fsrc(p, f))}" alt="">` : "<b>stl</b>"}</span>`;
   const badge = (fileName(f).match(/\.([^.]+)$/) || ["", "file"])[1].slice(0, 4);
   return `<span class="fthumb"><img src="/api/thumb?${fq(p, f)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('b'),{textContent:'${esc(badge)}'}))"></span>`;
 }
@@ -602,16 +604,32 @@ function renderFiles() {
   b.innerHTML = h;
   b.querySelectorAll("[data-fk]").forEach((x) => (x.onclick = () => { S.fkind = x.dataset.fk; render(); }));
 }
+// STL stills, drawn in the page with three.js once each and remembered while the page is open.
+const STILLS = new Map();
+let stlIO = null;
+function hydrateSTL() {
+  const els = document.querySelectorAll("[data-stl]:not([data-done])");
+  if (!els.length) return;
+  stlIO ||= new IntersectionObserver((es) => es.forEach((e) => {
+    if (!e.isIntersecting) return; const el = e.target; stlIO.unobserve(el);
+    const url = el.dataset.stl;
+    import("/stl.mjs").then((m) => m.snapshotSTL(url)).then((data) => { STILLS.set(url, data); document.querySelectorAll(`[data-stl="${CSS.escape(url)}"]`).forEach((x) => (x.innerHTML = `<img src="${data}" alt="">`)); }).catch(() => {});
+  }), { rootMargin: "200px" });
+  els.forEach((el) => { el.dataset.done = "1"; if (STILLS.has(el.dataset.stl)) return; stlIO.observe(el); });
+}
+new MutationObserver(() => hydrateSTL()).observe(document.body, { childList: true, subtree: true });
+
 // The large viewer: previews what the browser can show; everything gets Open / Show in Finder.
 function openViewer(pid, id) {
   const p = P().find((x) => x.id === pid), f = p?.files?.find((x) => x.id === id); if (!f) return;
   if (f.url) { window.open(f.url, "_blank", "noopener"); return; }
-  const src = `/api/fileview?${fq(p, f)}`;
+  const src = fsrc(p, f);
   const body = f.kind === "image" ? `<img src="${src}" alt="">`
     : f.kind === "pdf" ? `<iframe src="${src}" title="${esc(f.title)}"></iframe>`
     : f.kind === "html" ? `<iframe src="${src}" sandbox="allow-scripts allow-popups allow-forms" title="${esc(f.title)}"></iframe>`
     : f.kind === "video" ? `<video src="${src}" controls autoplay></video>`
     : f.kind === "text" ? `<pre class="vtext">Loading…</pre>`
+    : /\.stl$/i.test(f.path) ? `<div class="v3d" id="v3d"><p class="hint">Loading the model…</p></div>`
     : `<img class="vthumb" src="/api/thumb?${fq(p, f)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('p'),{className:'hint',textContent:'No preview for this kind of file. Open it in its app.'}))">`;
   document.body.insertAdjacentHTML("beforeend", `<div class="viewer" id="viewer" role="dialog" aria-label="${esc(f.title)}"><div class="vbox glass"><div class="vhead"><div class="vt"><b>${esc(f.title)}</b><span>${esc(f.path.replace(/^\/Users\/[^/]+/, "~"))}</span></div><button class="btn" data-fo="open">Open</button><button class="btn" data-fo="finder">Show in Finder</button><button class="x" id="vclose" aria-label="Close">×</button></div><div class="vbody">${body}</div></div></div>`);
   const v = $("viewer"), close = () => { v.remove(); document.removeEventListener("keydown", esck); };
@@ -621,6 +639,7 @@ function openViewer(pid, id) {
   $("vclose").onclick = close;
   v.querySelectorAll("[data-fo]").forEach((x) => (x.onclick = () => api("/api/fileopen", { project: p.id, id: f.id, finder: x.dataset.fo === "finder" }).catch((e) => toast(e.message, true))));
   if (f.kind === "text") fetch(src).then((r) => r.text()).then((t) => { const el = v.querySelector(".vtext"); if (el) el.textContent = t.slice(0, 200000); });
+  if ($("v3d")) import("/stl.mjs").then((m) => m.showSTL($("v3d"), src)).catch(() => { const el = $("v3d"); if (el) el.innerHTML = '<p class="hint">Couldn\'t draw this model. Open it in its app.</p>'; });
 }
 document.addEventListener("click", (e) => { const c = e.target.closest?.("[data-fopen]"); if (!c) return; e.preventDefault(); const [pid, id] = c.dataset.fopen.split("|"); openViewer(pid, id); });
 
