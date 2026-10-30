@@ -297,6 +297,9 @@ details.note div{padding-top:4px}
 .vt{flex:1;min-width:0;display:flex;flex-direction:column}
 .vt b{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .vt span{font:11.5px var(--mono);color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btn.danger{color:var(--bad)}
+.btn.danger.armed{background:var(--bad);color:#fff;border-color:transparent}
+.vbox.small{height:auto}
 .vbody{flex:1;min-height:0;display:grid;place-items:center;background:var(--soft);overflow:auto}
 .vbody iframe{width:100%;height:100%;border:0;background:#fff}
 .vbody img,.vbody video{max-width:100%;max-height:100%;object-fit:contain}

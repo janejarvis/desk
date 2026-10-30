@@ -604,6 +604,25 @@ function renderFiles() {
   b.innerHTML = h;
   b.querySelectorAll("[data-fk]").forEach((x) => (x.onclick = () => { S.fkind = x.dataset.fk; render(); }));
 }
+// Delete asks twice: the first press turns the button into a confirmation, which expires in 5 s.
+function wireDelete(v, p, f, close) {
+  const b = v.querySelector("#vdel"); let armed = false, t;
+  b.onclick = async () => {
+    if (!armed) { armed = true; b.textContent = f.url ? "Remove from Files?" : "Move to Trash?"; b.classList.add("armed"); t = setTimeout(() => { armed = false; b.textContent = "Delete"; b.classList.remove("armed"); }, 5000); return; }
+    clearTimeout(t); b.disabled = true;
+    try { const r = await api("/api/filedelete", { project: p.id, id: f.id }); close(); toast(r.trashed ? "Moved to the Trash. You can put it back from there." : "Removed from Files."); refresh(); }
+    catch (e) { toast(e.message, true); b.disabled = false; }
+  };
+}
+// Artifacts can't be shown inside the Desk (claude.ai doesn't allow it): a small sheet to open or remove.
+function openArtifact(p, f) {
+  document.body.insertAdjacentHTML("beforeend", `<div class="viewer" id="viewer" role="dialog" aria-label="${esc(f.title)}"><div class="vbox glass small"><div class="vhead"><div class="vt"><b>${esc(f.title)}</b><span>${esc(f.url)}</span></div><a class="btn primary" href="${esc(f.url)}" target="_blank" rel="noopener">Open on claude.ai</a><button class="btn danger" id="vdel">Delete</button><button class="x" id="vclose" aria-label="Close">×</button></div></div></div>`);
+  const v = $("viewer"), close = () => { v.remove(); document.removeEventListener("keydown", esck); };
+  const esck = (e) => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", esck); v.onclick = (e) => { if (e.target === v) close(); }; $("vclose").onclick = close;
+  wireDelete(v, p, f, close);
+}
+
 // STL stills, drawn in the page with three.js once each and remembered while the page is open.
 const STILLS = new Map();
 let stlIO = null;
@@ -622,7 +641,7 @@ new MutationObserver(() => hydrateSTL()).observe(document.body, { childList: tru
 // The large viewer: previews what the browser can show; everything gets Open / Show in Finder.
 function openViewer(pid, id) {
   const p = P().find((x) => x.id === pid), f = p?.files?.find((x) => x.id === id); if (!f) return;
-  if (f.url) { window.open(f.url, "_blank", "noopener"); return; }
+  if (f.url) return openArtifact(p, f);
   const src = fsrc(p, f);
   const body = f.kind === "image" ? `<img src="${src}" alt="">`
     : f.kind === "pdf" ? `<iframe src="${src}" title="${esc(f.title)}"></iframe>`
@@ -631,12 +650,13 @@ function openViewer(pid, id) {
     : f.kind === "text" ? `<pre class="vtext">Loading…</pre>`
     : /\.stl$/i.test(f.path) ? `<div class="v3d" id="v3d"><p class="hint">Loading the model…</p></div>`
     : `<img class="vthumb" src="/api/thumb?${fq(p, f)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('p'),{className:'hint',textContent:'No preview for this kind of file. Open it in its app.'}))">`;
-  document.body.insertAdjacentHTML("beforeend", `<div class="viewer" id="viewer" role="dialog" aria-label="${esc(f.title)}"><div class="vbox glass"><div class="vhead"><div class="vt"><b>${esc(f.title)}</b><span>${esc(f.path.replace(/^\/Users\/[^/]+/, "~"))}</span></div><button class="btn" data-fo="open">Open</button><button class="btn" data-fo="finder">Show in Finder</button><button class="x" id="vclose" aria-label="Close">×</button></div><div class="vbody">${body}</div></div></div>`);
+  document.body.insertAdjacentHTML("beforeend", `<div class="viewer" id="viewer" role="dialog" aria-label="${esc(f.title)}"><div class="vbox glass"><div class="vhead"><div class="vt"><b>${esc(f.title)}</b><span>${esc(f.path.replace(/^\/Users\/[^/]+/, "~"))}</span></div><button class="btn" data-fo="open">Open</button><button class="btn" data-fo="finder">Show in Finder</button><button class="btn danger" id="vdel">Delete</button><button class="x" id="vclose" aria-label="Close">×</button></div><div class="vbody">${body}</div></div></div>`);
   const v = $("viewer"), close = () => { v.remove(); document.removeEventListener("keydown", esck); };
   const esck = (e) => { if (e.key === "Escape") close(); };
   document.addEventListener("keydown", esck);
   v.onclick = (e) => { if (e.target === v) close(); };
   $("vclose").onclick = close;
+  wireDelete(v, p, f, close);
   v.querySelectorAll("[data-fo]").forEach((x) => (x.onclick = () => api("/api/fileopen", { project: p.id, id: f.id, finder: x.dataset.fo === "finder" }).catch((e) => toast(e.message, true))));
   if (f.kind === "text") fetch(src).then((r) => r.text()).then((t) => { const el = v.querySelector(".vtext"); if (el) el.textContent = t.slice(0, 200000); });
   if ($("v3d")) import("/stl.mjs").then((m) => m.showSTL($("v3d"), src)).catch(() => { const el = $("v3d"); if (el) el.innerHTML = '<p class="hint">Couldn\'t draw this model. Open it in its app.</p>'; });

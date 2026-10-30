@@ -216,7 +216,10 @@ function viewFile(res, pathname) {
     if (!target.startsWith(dir + "/") || target.includes("/../") || !existsSync(target) || !statSync(target).isFile()) { res.writeHead(404); return res.end(); }
   }
   const ext = extname(target).toLowerCase();
-  const head = { "Content-Type": MIME[ext] || MIME_EXTRA[ext] || "application/octet-stream", "Content-Length": statSync(target).size, "Cache-Control": "no-cache" };
+  const head = { "Content-Type": MIME[ext] || MIME_EXTRA[ext] || "application/octet-stream", "Content-Length": statSync(target).size, "Cache-Control": "no-cache",
+    // A sealed-off page counts as "another site", so let it read the files in its own folder (its
+    // models, images, data). Nothing outside that folder is reachable through this route.
+    "Access-Control-Allow-Origin": "*" };
   // A page Claude made runs sealed off: it can't reach the Desk or its data. (Only pages: Chrome
   // won't show a PDF in a sandboxed frame.)
   if (ext === ".html" || ext === ".htm") head["Content-Security-Policy"] = "sandbox allow-scripts allow-popups allow-forms";
@@ -306,6 +309,18 @@ const routes = {
   },
   "POST /api/op": (b) => ({ result: run(b.op, b.project, b) }),
   "POST /api/send": (b) => { if (!String(b.text || "").trim()) throw Object.assign(new Error("Type a message first."), { user: true }); sendTo(b.project, b.session, String(b.text)); return { ok: true }; },
+  // Delete: the file goes to the Trash (it can be put back from there) and leaves Files.
+  // An artifact only leaves Files; the page itself lives on claude.ai.
+  "POST /api/filedelete": (b) => {
+    const f = (load(b.project).files || []).find((x) => x.id === b.id);
+    if (!f) throw Object.assign(new Error("That file is already gone."), { user: true });
+    if (f.path && existsSync(f.path)) {
+      try { execFileSync("/usr/bin/trash", [f.path], { timeout: 15000, stdio: "ignore" }); } // macOS's own: recoverable from the Trash
+      catch { throw Object.assign(new Error("Couldn't move it to the Trash."), { user: true }); }
+    }
+    run("file.remove", b.project, { id: b.id });
+    return { ok: true, trashed: !!f.path };
+  },
   "POST /api/fileopen": (b) => { const f = fileOf(b.project, b.id); execFileSync("open", b.finder ? ["-R", f.path] : [f.path]); return { ok: true }; },
   "POST /api/shell": (b) => shell(b.project, b.session, b.cmd),
   "POST /api/stop": (b) => ({ stopped: runner.stop(b.session) }),
@@ -398,5 +413,5 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "127.0.0.1", () => {
   // Replies that were running when the server last stopped carry on: pick them up again.
   const n = runner.resume((m) => { if (m.sid) streaming.set(m.sid, ""); return handler(m.project, m.sid, false); });
-  console.log(`Desk is open at http://127.0.0.1:${PORT}` + (n ? ` (picked up ${n} reply${n === 1 ? "" : "s"} still running)` : ""));
+  console.log(`Desk is open at http://127.0.0.1:${PORT}` + (n ? ` (picked up ${n} ${n === 1 ? "reply" : "replies"} still running)` : ""));
 });
