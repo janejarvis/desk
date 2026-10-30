@@ -27,6 +27,13 @@ Roadmap (milestone status: done, now, next)
   desk milestone <id> <status>
   desk milestone set <id> [--title] [--due] [--status] [--note]
 
+Files (what you made for Diogo: documents, PDFs, images, print files, artifacts)
+  desk file add <full path or claude.ai artifact link> --title "<plain title>" [--note TEXT]
+  desk files                                  list this project's files
+  desk file remove <id>
+    Register every file you hand Diogo, when you hand it over. Artifacts you publish are
+    picked up automatically.
+
 Meetings
   desk meeting done <id> --summary "<text>" --action "<text>" [--action ...]
 
@@ -163,6 +170,16 @@ try {
     else if (a1 === "set") { const m = run("milestone.set", owner("milestones", a2), { ...f, id: a2 }); say(`[${m.id}] ${m.title}: ${m.status}`); }
     else if (a1 && a2) { const m = run("milestone.set", owner("milestones", a1), { ...f, id: a1, status: a2 }); say(`[${m.id}] ${m.title}: ${m.status}`); }
     else fail("Try: desk milestone add \"<title>\" · desk milestone <id> <status> · desk help");
+  } else if (cmd === "file" && a1 === "add") {
+    const pid = project();
+    const f = run("file.add", pid, { path: a2, title: flags.title, note: flags.note, track: flags.track, session: mine()?.s.id || process.env.DESK_SESSION || "", source: "claude" });
+    say(`On the Desk under Files: [${f.id}] ${f.title} (${f.kind})`);
+  } else if (cmd === "file" && a1 === "remove") {
+    run("file.remove", owner("files", a2), { id: a2 }); say("Removed from Files (the file itself is untouched).");
+  } else if (cmd === "files") {
+    const p = load(project());
+    for (const f of (p.files || []).slice().sort((a, b) => b.at.localeCompare(a.at)).slice(0, 40)) say(`  ${f.at.slice(0, 10)}  ${f.kind.padEnd(8)} ${f.title}  [${f.id}]  ${f.url || tilde(f.path)}`);
+    if (!(p.files || []).length) say("No files yet.");
   } else if (cmd === "meeting" && a1 === "done") {
     if (!a2 || !flags.summary) fail("Usage: desk meeting done <id> --summary \"...\" --action \"...\"");
     run("meeting.set", owner("meetings", a2), { id: a2, status: "read", summary: flags.summary, actions: (flags.action || []).map((title) => ({ title, added: true })) });

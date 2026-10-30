@@ -40,6 +40,7 @@ export function rules(p, s) {
     `- Stuck: \`desk todo <id> blocked --why "<reason>"\`. Needs a person's answer or go: \`desk todo <id> waiting --waiting <name>\`. Delivered and awaiting feedback: \`desk todo <id> sent --to <name>\`.`,
     `- Standing duties that never finish (e.g. logging hours for a monthly report) are "ongoing" to-dos with --every daily|weekly|monthly; each time you do one, run \`desk todo tick <id>\`.`,
     `- Meetings: when you read a transcript, put every action on the board yourself (update existing to-dos rather than duplicating), reconcile the affected cards as one piece (who does each now, merge duplicates, remove what the meeting made pointless), then \`desk meeting done\`. Diogo doesn't sort actions.`,
+    `- Files: every document, PDF, image, video, print file or page you make for Diogo goes on the Desk's Files tab when you hand it over: \`desk file add <full path> --title "<plain title>"\`. Published artifacts are picked up automatically.`,
     `- New follow-ups or decisions owed become to-dos. A milestone reached: \`desk milestone <id> done\` and set the next one to now.`,
     `One to-do per meaningful deliverable or decision, not per step, in plain English. If nothing changed, write nothing. \`desk help\` has the rest.`,
   ].join("\n");
@@ -49,7 +50,7 @@ const joinHint = (p) => `This folder belongs to ${p.name} on Diogo's Desk (the p
 
 const READ_ONLY_TOOLS = /^(Read|Grep|Glob|LS|WebSearch|WebFetch|ToolSearch|Skill|AskUserQuestion|TodoWrite|TaskList|TaskGet|ListAgents|ScheduleWakeup|EnterPlanMode|ExitPlanMode|ArtifactComments|ReportFindings)$/;
 const READ_ONLY_BASH = /^\s*(cd [^;&|]+(&&|;)\s*)?(cat|ls|head|tail|grep|rg|find|stat|wc|sed -n|awk|echo|pwd|which|file|du|df|git (status|log|diff|show|branch)|jq|sort|uniq|date|env|printenv|ps|lsof)\b/;
-const isDesk = (c) => c?.name === "Bash" && /(^|[;&|(\s])desk\s+(todo|milestone|meeting|track|join)\b/.test(String(c.input?.command || ""));
+const isDesk = (c) => c?.name === "Bash" && /(^|[;&|(\s])desk\s+(todo|milestone|meeting|track|join|file)\b/.test(String(c.input?.command || ""));
 export function isWork(c) {
   const n = c?.name || "";
   if (READ_ONLY_TOOLS.test(n)) return false;

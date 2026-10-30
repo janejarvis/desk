@@ -2,7 +2,7 @@
 // Diogo's Desk — a local app for every project: chats with Claude sessions, roadmaps, the board and
 // meeting transcripts. 127.0.0.1 only. Data: data/projects/*.json (see lib/store.mjs).
 import http from "node:http";
-import { readFileSync, existsSync, mkdirSync, writeFileSync, watch, statSync, unlinkSync, createWriteStream, createReadStream } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, watch, statSync, unlinkSync, createWriteStream, createReadStream, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir, homedir } from "node:os";
 const HOME_DIR = homedir();
@@ -10,7 +10,8 @@ import { join, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { ROOT, DATA, expand, tilde, load, loadAll } from "./lib/store.mjs";
 import { run } from "./lib/ops.mjs";
-import { messages, lastWrite, live, agents } from "./lib/sessions.mjs";
+import { messages, lastWrite, live, agents, transcriptPath } from "./lib/sessions.mjs";
+import { artifactsIn, readFrom } from "./lib/files.mjs";
 import * as runner from "./lib/runner.mjs";
 
 const PORT = +(process.env.DESK_PORT || 4848);
@@ -196,6 +197,51 @@ function sendFile(res, path) {
   createReadStream(f).pipe(res);
 }
 
+// ---- Files: what Claude made, previewed in the Files tab and in chats ----
+// Only files registered on a project are ever served or opened, nothing else on disk.
+const THUMBS = join(ROOT, "cache", "thumbs");
+const fileOf = (pid, id) => { const f = (load(pid).files || []).find((x) => x.id === id); if (!f || !f.path || !existsSync(f.path)) throw Object.assign(new Error("That file isn't there any more."), { user: true }); return f; };
+const MIME = { ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml", ".heic": "image/heic",
+  ".mp4": "video/mp4", ".mov": "video/quicktime", ".m4v": "video/mp4", ".webm": "video/webm", ".html": "text/html; charset=utf-8", ".htm": "text/html; charset=utf-8",
+  ".md": "text/plain; charset=utf-8", ".txt": "text/plain; charset=utf-8", ".csv": "text/plain; charset=utf-8", ".json": "text/plain; charset=utf-8" };
+function viewFile(res, q) {
+  const f = fileOf(q.get("project"), q.get("id"));
+  const size = statSync(f.path).size;
+  res.writeHead(200, { "Content-Type": MIME[extname(f.path).toLowerCase()] || "application/octet-stream", "Content-Length": size, "Cache-Control": "no-cache",
+    // a page Claude made runs in a sandbox: it can't reach the Desk or its data
+    "Content-Security-Policy": "sandbox allow-scripts allow-popups allow-forms" });
+  createReadStream(f.path).pipe(res);
+}
+function thumb(res, q) {
+  const f = fileOf(q.get("project"), q.get("id"));
+  mkdirSync(THUMBS, { recursive: true });
+  const key = join(THUMBS, `${f.id}-${Math.round(statSync(f.path).mtimeMs)}.png`);
+  if (!existsSync(key)) {
+    const tmp = join(tmpdir(), "desk-ql-" + randomUUID().slice(0, 8)); mkdirSync(tmp, { recursive: true });
+    try { execFileSync("qlmanage", ["-t", "-s", "600", "-o", tmp, f.path], { timeout: 20000, stdio: "ignore" }); } catch {}
+    const made = existsSync(tmp) ? readdirSync(tmp).find((x) => x.endsWith(".png")) : null;
+    if (!made) { res.writeHead(404); return res.end(); }
+    writeFileSync(key, readFileSync(join(tmp, made)));
+  }
+  res.writeHead(200, { "Content-Type": "image/png", "Cache-Control": "max-age=86400" });
+  createReadStream(key).pipe(res);
+}
+
+// Artifacts a session publishes land in Files on their own: new transcript lines are checked every
+// 30 seconds (from where the server started; earlier ones were filled in once, by hand).
+const scanned = new Map();
+function scanArtifacts() {
+  for (const p of loadAll()) for (const s of p.sessions) {
+    if (s.started === false) continue;
+    const t = transcriptPath(s.id, s.cwd); if (!t) continue;
+    const from = scanned.get(t);
+    if (from === undefined) { try { scanned.set(t, statSync(t).size); } catch {} continue; }
+    const { lines, end } = readFrom(t, from); scanned.set(t, end);
+    for (const a of artifactsIn(lines)) try { run("file.add", p.id, { url: a.url, title: a.title, at: a.at, session: s.id, source: "artifact" }); } catch {}
+  }
+}
+setInterval(scanArtifacts, 30000); setTimeout(scanArtifacts, 2000);
+
 // ---- HTTP ----
 async function body(req) {
   let b = ""; for await (const c of req) { b += c; if (b.length > 5e6) throw Object.assign(new Error("That's too large."), { user: true }); }
@@ -223,6 +269,7 @@ const routes = {
   },
   "POST /api/op": (b) => ({ result: run(b.op, b.project, b) }),
   "POST /api/send": (b) => { if (!String(b.text || "").trim()) throw Object.assign(new Error("Type a message first."), { user: true }); sendTo(b.project, b.session, String(b.text)); return { ok: true }; },
+  "POST /api/fileopen": (b) => { const f = fileOf(b.project, b.id); execFileSync("open", b.finder ? ["-R", f.path] : [f.path]); return { ok: true }; },
   "POST /api/shell": (b) => shell(b.project, b.session, b.cmd),
   "POST /api/stop": (b) => ({ stopped: runner.stop(b.session) }),
   "POST /api/session": (b) => {
@@ -291,6 +338,8 @@ const server = http.createServer(async (req, res) => {
     // Attachments: the file's bytes are the body (no JSON), streamed to uploads/<project>/.
     if (req.method === "POST" && url.pathname === "/api/upload") return upload(req, res, url.searchParams);
     if (req.method === "GET" && url.pathname === "/api/file") return sendFile(res, url.searchParams.get("path"));
+    if (req.method === "GET" && url.pathname === "/api/fileview") return viewFile(res, url.searchParams);
+    if (req.method === "GET" && url.pathname === "/api/thumb") return thumb(res, url.searchParams);
     const route = routes[`${req.method} ${url.pathname}`];
     if (route) {
       if (req.method === "POST" && req.headers["content-type"] !== "application/json") return json(res, 415, { error: "JSON only." });

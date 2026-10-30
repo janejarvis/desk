@@ -4,3 +4,4 @@ transcripts/
 node_modules/
 run/
 uploads/
+cache/

@@ -60,7 +60,7 @@ function toast(msg, err) { const t = $("toast"); t.textContent = msg; t.classNam
 
 // ---- state ----
 let D = { projects: [] };
-const S = { attach: {}, agents: {}, agentsAt: {}, helpersOpen: {}, view: "all", track: "all", tab: "chats", filter: "all", allDone: false, panes: {}, focus: {}, listOpen: false, sheet: false, meet: {}, meetMode: "paste", msForm: null, pendingDel: null, msgs: {}, stream: {}, seen: {}, why: null };
+const S = { fkind: "all", attach: {}, agents: {}, agentsAt: {}, helpersOpen: {}, view: "all", track: "all", tab: "chats", filter: "all", allDone: false, panes: {}, focus: {}, listOpen: false, sheet: false, meet: {}, meetMode: "paste", msForm: null, pendingDel: null, msgs: {}, stream: {}, seen: {}, why: null };
 try { const v = JSON.parse(localStorage.getItem("desk-ui") || "null"); if (v) Object.assign(S, { view: v.view || "all", track: v.track || "all", tab: v.tab || "chats", listOpen: !!v.listOpen, panes: v.panes || {} }); } catch {}
 const save = () => { try { localStorage.setItem("desk-ui", JSON.stringify({ view: S.view, track: S.track, tab: S.tab, listOpen: S.listOpen, panes: S.panes })); } catch {} };
 
@@ -158,13 +158,13 @@ function renderMain() {
   const p = proj();
   const unread = allSessions().some((x) => stateOf(x.s) === "waiting");
   let h = `<div class="top"><h1 title="${p ? esc(p.folder) : ""}">${p ? esc(p.name) : "All projects"}</h1>
-    <div class="seg" role="tablist">${[["chats", "Chats"], ["roadmap", "Roadmap"], ["board", "Board"], ["meetings", "Meetings"]].map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}${k === "chats" && unread ? '<span class="udot" title="New replies"></span>' : ""}</button>`).join("")}</div>`;
+    <div class="seg" role="tablist">${[["chats", "Chats"], ["roadmap", "Roadmap"], ["board", "Board"], ["meetings", "Meetings"], ["files", "Files"]].map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}${k === "chats" && unread ? '<span class="udot" title="New replies"></span>' : ""}</button>`).join("")}</div>`;
   if (p) h += `<div class="tracks">${p.tracks.length > 1 ? `<button class="chip" data-tr="all" aria-pressed="${S.track === "all"}">All tracks</button>` : ""}${p.tracks.map((t) => trackChip(p, t)).join("")}<button class="chip add" id="addtrack">${I.plus}Track</button></div>`;
   h += `</div><div class="body${S.tab === "chats" ? " chat-body" : ""}" id="body"></div>`;
   $("main").innerHTML = h;
   $("main").querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { S.tab = b.dataset.tab; render(); }));
   if (p) wireTracks(p);
-  ({ chats: renderChats, roadmap: renderRoadmap, board: renderBoard, meetings: renderMeetings }[S.tab] || renderChats)();
+  ({ chats: renderChats, roadmap: renderRoadmap, board: renderBoard, meetings: renderMeetings, files: renderFiles }[S.tab] || renderChats)();
 }
 
 function trackChip(p, t) {
@@ -518,7 +518,7 @@ function renderChats() {
 function paneHTML({ p: sp, s }, key) {
   const label = `${sp.name} · ${trName(sp, s.track)}`; // shown on hover only: the pane header is just the session's name
   const st = stateOf(s), live = S.stream[s.id], msgs = S.msgs[s.id]?.list;
-  let body = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => `<div class="m ${m.who}">${m.who === "me" ? meText(m.text) : md(m.text)}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
+  let body = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => `<div class="m ${m.who}">${m.who === "me" ? meText(m.text) : md(m.text)}${m.who === "claude" ? fileCards(sp, s, msgs, m) : ""}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
   for (const e of s.pendingShell || []) body += `<div class="m shell"><div class="sh-h"><code>$ ${esc(e.cmd)}</code><span>${e.state === "running" ? "running in Terminal…" : `exit ${e.code ?? "?"} · goes with your next message`}</span></div>${e.state === "done" ? `<pre>${esc(e.output || "(no output)")}</pre>` : ""}</div>`;
   if (live?.active) body += `<div class="m claude live" data-live="${esc(s.id)}"><span class="tx">${live.text ? md(live.text) : ""}</span><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">${live.tool ? "Working · " + esc(live.tool) : "Working"}</span></span></div>`;
   return `<section class="pane-c${S.focus[key] === s.id && S.panes[key].length > 1 ? " focus" : ""}${st === "waiting" ? " unread" : ""}" data-pane="${s.id}">
@@ -570,6 +570,59 @@ setInterval(() => {
   for (const id of S.panes[paneKey()] || []) { const x = findS(id); if (x) loadAgents(x, true); }
   document.querySelectorAll(".h.running .htime").forEach((el) => { const li = el.closest("[data-helpers]"); if (li) paintHelpers(li.dataset.helpers); });
 }, 4000);
+
+/* ---------- Files: what Claude made ---------- */
+const KINDS = [["all", "All"], ["pdf", "PDFs"], ["doc", "Documents"], ["sheet", "Sheets"], ["slides", "Slides"], ["image", "Images"], ["video", "Videos"], ["html", "Pages"], ["artifact", "Artifacts"], ["print", "Print files"], ["text", "Notes"], ["other", "Other"]];
+const KLABEL = Object.fromEntries(KINDS);
+const fq = (p, f) => `project=${encodeURIComponent(p.id)}&id=${encodeURIComponent(f.id)}`;
+const fileName = (f) => f.url ? "claude.ai artifact" : f.path.split("/").pop();
+function fileThumb(p, f) {
+  if (f.kind === "artifact") return `<span class="fthumb art"><span>✦</span></span>`;
+  if (f.kind === "image") return `<span class="fthumb"><img src="/api/fileview?${fq(p, f)}" alt="" loading="lazy"></span>`;
+  const badge = (fileName(f).match(/\.([^.]+)$/) || ["", "file"])[1].slice(0, 4);
+  return `<span class="fthumb"><img src="/api/thumb?${fq(p, f)}" alt="" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('b'),{textContent:'${esc(badge)}'}))"></span>`;
+}
+function fileCard(p, f, small) {
+  return `<button class="fcard${small ? " small" : ""}" data-fopen="${esc(p.id)}|${esc(f.id)}" title="${esc(f.url || f.path)}">${fileThumb(p, f)}<span class="fmeta"><span class="ft">${esc(f.title)}</span><span class="fs">${esc(KLABEL[f.kind] || "File")} · ${fmt(f.at)}${small ? "" : ` · ${esc(p.sessions.find((s) => s.id === f.session || (s.previousIds || []).includes(f.session))?.name || trName(p, f.track))}`}</span></span></button>`;
+}
+// Under a reply: the files registered between the message before it and shortly after it.
+function fileCards(p, s, msgs, m) {
+  const ids = [s.id, ...(s.previousIds || [])], i = msgs.indexOf(m), t = Date.parse(m.at) || 0;
+  const from = i > 0 ? Date.parse(msgs[i - 1].at) || 0 : 0, to = (i < msgs.length - 1 ? Date.parse(msgs[i + 1].at) : Date.now()) || Date.now();
+  const fs = (p.files || []).filter((f) => ids.includes(f.session) && Date.parse(f.at) > from && Date.parse(f.at) <= Math.min(to, t + 10 * 60e3));
+  return fs.length ? `<span class="fcards">${fs.map((f) => fileCard(p, f, true)).join("")}</span>` : "";
+}
+function renderFiles() {
+  const b = $("body");
+  const all = scopeP().flatMap((p) => (p.files || []).filter(inTrack).map((f) => ({ p, f }))).sort((a, c) => c.f.at.localeCompare(a.f.at));
+  const has = new Set(all.map((x) => x.f.kind));
+  const list = all.filter((x) => S.fkind === "all" || x.f.kind === S.fkind);
+  let h = `<div class="tools"><div class="filters">${KINDS.filter(([k]) => k === "all" || has.has(k)).map(([k, l]) => `<button class="chip" data-fk="${k}" aria-pressed="${S.fkind === k}">${l}</button>`).join("")}</div></div>`;
+  h += list.length ? `<div class="fgrid">${list.map(({ p, f }) => fileCard(p, f, false)).join("")}</div>` : `<div class="empty">Nothing here yet. Whatever Claude makes for this project — documents, PDFs, images, print files, artifacts — appears here.</div>`;
+  b.innerHTML = h;
+  b.querySelectorAll("[data-fk]").forEach((x) => (x.onclick = () => { S.fkind = x.dataset.fk; render(); }));
+}
+// The large viewer: previews what the browser can show; everything gets Open / Show in Finder.
+function openViewer(pid, id) {
+  const p = P().find((x) => x.id === pid), f = p?.files?.find((x) => x.id === id); if (!f) return;
+  if (f.url) { window.open(f.url, "_blank", "noopener"); return; }
+  const src = `/api/fileview?${fq(p, f)}`;
+  const body = f.kind === "image" ? `<img src="${src}" alt="">`
+    : f.kind === "pdf" ? `<iframe src="${src}" title="${esc(f.title)}"></iframe>`
+    : f.kind === "html" ? `<iframe src="${src}" sandbox="allow-scripts allow-popups allow-forms" title="${esc(f.title)}"></iframe>`
+    : f.kind === "video" ? `<video src="${src}" controls autoplay></video>`
+    : f.kind === "text" ? `<pre class="vtext">Loading…</pre>`
+    : `<img class="vthumb" src="/api/thumb?${fq(p, f)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('p'),{className:'hint',textContent:'No preview for this kind of file. Open it in its app.'}))">`;
+  document.body.insertAdjacentHTML("beforeend", `<div class="viewer" id="viewer" role="dialog" aria-label="${esc(f.title)}"><div class="vbox glass"><div class="vhead"><div class="vt"><b>${esc(f.title)}</b><span>${esc(f.path.replace(/^\/Users\/[^/]+/, "~"))}</span></div><button class="btn" data-fo="open">Open</button><button class="btn" data-fo="finder">Show in Finder</button><button class="x" id="vclose" aria-label="Close">×</button></div><div class="vbody">${body}</div></div></div>`);
+  const v = $("viewer"), close = () => { v.remove(); document.removeEventListener("keydown", esck); };
+  const esck = (e) => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", esck);
+  v.onclick = (e) => { if (e.target === v) close(); };
+  $("vclose").onclick = close;
+  v.querySelectorAll("[data-fo]").forEach((x) => (x.onclick = () => api("/api/fileopen", { project: p.id, id: f.id, finder: x.dataset.fo === "finder" }).catch((e) => toast(e.message, true))));
+  if (f.kind === "text") fetch(src).then((r) => r.text()).then((t) => { const el = v.querySelector(".vtext"); if (el) el.textContent = t.slice(0, 200000); });
+}
+document.addEventListener("click", (e) => { const c = e.target.closest?.("[data-fopen]"); if (!c) return; e.preventDefault(); const [pid, id] = c.dataset.fopen.split("|"); openViewer(pid, id); });
 
 /* ---------- Attachments: photos, documents, videos… ---------- */
 const ATTACH_HEAD = "[Attached files, saved on this Mac — open and read them as needed:]";
