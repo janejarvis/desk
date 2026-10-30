@@ -83,6 +83,7 @@ async function refresh() {
   catch { if (!$("offline")) document.body.insertAdjacentHTML("beforeend", '<div class="offline" id="offline">The Desk server isn\'t running. Start it with: desk open</div>'); return; }
   if (!proj()) { S.view = P()[0]?.id || "all"; S.track = "all"; }
   if (proj() && S.track !== "all" && !proj().tracks.some((t) => t.id === S.track)) S.track = "all";
+  checkNeeds();
   render();
 }
 let refreshT;
@@ -119,6 +120,7 @@ function onStream(ev) {
   else if (ev.kind === "done") {
     st.active = false; st.queued = Math.max(0, st.queued - 1);
     if (ev.error) toast(ev.error, true);
+    { const x = findS(ev.session); if (x) notify(`${x.p.name} · ${x.s.name}`, ev.error ? "Stopped with an error: " + ev.error : (st.text || "").replace(/\s+/g, " ").trim() || "Replied.", ev.session); }
     delete S.msgs[ev.session]; st.text = ""; refresh();
   }
 }
@@ -128,11 +130,41 @@ const feedHTML = (st) => (st.steps || []).slice(-6).map((l, i, a) => `<li class=
 const workLine = (st) => `${st.tool ? "Working · " + st.tool : "Working"}${st.since ? " · " + dur(new Date(st.since).toISOString()) : ""}`;
 // The working line's timer ticks even when nothing new arrives, so a long step never looks frozen.
 setInterval(() => { for (const id in S.stream) if (S.stream[id].active) paintLive(id); }, 1000);
+/* ---------- Notifications: a reply finished, or something new needs Diogo ---------- */
+const canNotify = () => "Notification" in window && Notification.permission === "granted";
+const away = () => document.hidden || !document.hasFocus();
+function notify(title, body, sid) {
+  if (!canNotify() || !away()) return;
+  const n = new Notification(title, { body: body.slice(0, 180), tag: sid || title, silent: false });
+  n.onclick = () => { window.focus(); const x = sid && findS(sid); if (x) { S.view = x.p.id; S.track = "all"; S.tab = "chats"; openPane(paneKey(), sid); } n.close(); };
+}
+let knownNeeds = null;
+function checkNeeds() { // new cards waiting on Diogo, since the last look
+  const now = new Map(P().flatMap((p) => p.todos.filter(needsMe).map((t) => [t.id, [p, t]])));
+  if (knownNeeds) for (const [id, [p, t]] of now) if (!knownNeeds.has(id)) notify(`${p.name} · needs you`, t.title);
+  knownNeeds = new Set(now.keys());
+}
+// A reply picked up after a restart replays from its start, so its live text can begin with what is
+// already saved above it: show only the part not yet in the conversation.
+function unsaid(text, msgs) {
+  text = text || ""; const last = [...(msgs || [])].reverse().find((m) => m.who === "claude")?.text || "";
+  if (!last) return text;
+  const norm = (x) => x.replace(/\s+/g, " ").trim();
+  for (const part of last.split(/\n\n+/).map(norm).filter((x) => x.length > 20).reverse()) {
+    const i = norm(text).lastIndexOf(part);
+    if (i >= 0) { // drop everything up to the end of the already-saved part
+      let seen = 0, cut = 0; const target = i + part.length;
+      for (; cut < text.length && seen < target; cut++) if (!(/\s/.test(text[cut]) && /\s/.test(text[cut - 1] || " "))) seen++;
+      return text.slice(cut).replace(/^\s+/, "");
+    }
+  }
+  return text;
+}
 function paintLive(sid) {
   const el = document.querySelector(`[data-live="${CSS.escape(sid)}"]`);
   if (!el) return;
   const st = S.stream[sid];
-  el.querySelector(".tx").innerHTML = st.text ? md(st.text) : "";
+  el.querySelector(".tx").innerHTML = md(unsaid(st.text, S.msgs[sid]?.list));
   el.querySelector(".wk").textContent = workLine(st);
   const feed = el.querySelector(".feed"); if (feed) feed.innerHTML = feedHTML(st);
   const box = el.closest(".msgs"); if (box && box.scrollHeight - box.scrollTop - box.clientHeight < 160) box.scrollTop = box.scrollHeight;
@@ -161,7 +193,9 @@ function renderRail() {
   }
   r.innerHTML = h;
   const all = P().flatMap((p) => p.sessions);
-  $("railfoot").innerHTML = `<b>${fmt(new Date().toISOString())}</b><br>${all.filter((s) => stateOf(s) === "working").length} working · ${all.filter((s) => stateOf(s) === "waiting").length} new replies`;
+  const nbtn = "Notification" in window && Notification.permission === "default" ? `<button class="linkbtn" id="notifyon">Turn on notifications</button><br>` : "";
+  $("railfoot").innerHTML = nbtn + `<b>${fmt(new Date().toISOString())}</b><br>${all.filter((s) => stateOf(s) === "working").length} working · ${all.filter((s) => stateOf(s) === "waiting").length} new replies`;
+  $("notifyon")?.addEventListener("click", () => Notification.requestPermission().then(() => render()));
   r.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { if (S.view !== b.dataset.go) { S.view = b.dataset.go; S.track = "all"; S.sheet = false; S.filter = "all"; S.msForm = null; } render(); }));
   r.querySelectorAll("[data-track]").forEach((b) => (b.onclick = () => { S.track = S.track === b.dataset.track ? "all" : b.dataset.track; S.msForm = null; render(); }));
 }
@@ -171,11 +205,12 @@ function renderMain() {
   const unread = allSessions().some((x) => stateOf(x.s) === "waiting");
   let h = `<div class="top"><h1 title="${p ? esc(p.folder) : ""}">${p ? esc(p.name) : "All projects"}</h1>
     <div class="seg" role="tablist">${[["chats", "Chats"], ["roadmap", "Roadmap"], ["board", "Board"], ["meetings", "Meetings"], ["files", "Files"]].map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}${k === "chats" && unread ? '<span class="udot" title="New replies"></span>' : ""}</button>`).join("")}</div>`;
+  if (p) h += `<button class="chip brief" id="briefbtn" title="What every session reads first about ${esc(p.name)}">Brief</button>`;
   if (p) h += `<div class="tracks">${p.tracks.length > 1 ? `<button class="chip" data-tr="all" aria-pressed="${S.track === "all"}">All tracks</button>` : ""}${p.tracks.map((t) => trackChip(p, t)).join("")}<button class="chip add" id="addtrack">${I.plus}Track</button></div>`;
   h += `</div><div class="body${S.tab === "chats" ? " chat-body" : ""}" id="body"></div>`;
   $("main").innerHTML = h;
   $("main").querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { S.tab = b.dataset.tab; render(); }));
-  if (p) wireTracks(p);
+  if (p) { wireTracks(p); $("briefbtn").onclick = () => openBrief(p); }
   ({ chats: renderChats, roadmap: renderRoadmap, board: renderBoard, meetings: renderMeetings, files: renderFiles }[S.tab] || renderChats)();
 }
 
@@ -531,8 +566,9 @@ function paneHTML({ p: sp, s }, key) {
   const label = `${sp.name} · ${trName(sp, s.track)}`; // shown on hover only: the pane header is just the session's name
   const st = stateOf(s), live = S.stream[s.id], msgs = S.msgs[s.id]?.list;
   let body = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => `<div class="m ${m.who}">${m.who === "me" ? meText(m.text) : md(m.text)}${m.who === "claude" ? fileCards(sp, s, msgs, m) : ""}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
+  for (const [i, d] of (s.denied || []).entries()) body += `<div class="m denied"><div class="dh"><b>Not allowed from the Desk</b><span>${esc(d.tool)} · ${esc(clock(d.at))}</span></div><div class="dd">${esc(d.detail)}</div>${d.command ? `<code class="dc">${esc(d.command.length > 300 ? d.command.slice(0, 300) + "…" : d.command)}</code>` : ""}<div class="dx">Steps that need your OK are refused when sent from the Desk.${d.command ? " Run it yourself, or tell the session how to go on." : " Tell the session how to go on."}</div><div class="db">${d.command ? `<button type="button" class="btn small" data-runit="${esc(s.id)}|${i}">Run it myself (!)</button>` : ""}<button type="button" class="linkbtn" data-undeny="${esc(sp.id)}|${esc(s.id)}|${i}">Dismiss</button></div></div>`;
   for (const e of s.pendingShell || []) body += `<div class="m shell"><div class="sh-h"><code>$ ${esc(e.cmd)}</code><span>${e.state === "running" ? "running in Terminal…" : `exit ${e.code ?? "?"} · goes with your next message`}</span></div>${e.state === "done" ? `<pre>${esc(e.output || "(no output)")}</pre>` : ""}</div>`;
-  if (live?.active) body += `<div class="m claude live" data-live="${esc(s.id)}"><span class="tx">${live.text ? md(live.text) : ""}</span><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">${esc(workLine(live))}</span></span><ul class="feed">${feedHTML(live)}</ul></div>`;
+  if (live?.active) body += `<div class="m claude streaming" data-live="${esc(s.id)}"><span class="tx">${md(unsaid(live.text, msgs))}</span><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">${esc(workLine(live))}</span></span><ul class="feed">${feedHTML(live)}</ul></div>`;
   return `<section class="pane-c${S.focus[key] === s.id && S.panes[key].length > 1 ? " focus" : ""}${st === "waiting" ? " unread" : ""}" data-pane="${s.id}">
    <div class="convhead"><div class="l"><span class="sw" style="background:${sp.color}" title="${esc(label)}"></span>
      <input class="sname" data-rn="${s.id}" data-p="${sp.id}" id="sn-${s.id}" value="${esc(s.name)}" aria-label="Session name" maxlength="40" title="${esc(s.cwd)}"></div>
@@ -543,7 +579,7 @@ function paneHTML({ p: sp, s }, key) {
    <form class="composer" data-send="${s.id}" data-p="${sp.id}"><button type="button" class="btn round clip" data-clip="${esc(s.id)}" aria-label="Attach files" title="Attach photos, documents, videos…">${I.clip}</button><input type="file" multiple hidden data-file="${esc(s.id)}"><textarea id="say-${s.id}" rows="1" placeholder="Message ${esc(s.name)}…  (! runs a command)"></textarea>${live?.active ? `<button type="button" class="btn stop" data-stop="${s.id}" aria-label="Stop" title="Stop">${I.stop}</button>` : ""}<button class="btn primary" aria-label="Send" disabled>${I.send}</button></form></section>`;
 }
 /* ---------- Helper agents (subagents) at the bottom of each pane ---------- */
-const dur = (a, b) => { const s = Math.max(0, Math.round((new Date(b || Date.now()) - new Date(a)) / 1000)); return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`; };
+const dur = (a, b) => { const s = Math.max(0, Math.round((new Date(b || Date.now()) - new Date(a)) / 1000)); if (!a || isNaN(s)) return ""; return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`; };
 function helpersHTML(sid) {
   const list = S.agents[sid];
   if (!list || !list.length) return "";
@@ -582,6 +618,45 @@ setInterval(() => {
   for (const id of S.panes[paneKey()] || []) { const x = findS(id); if (x) loadAgents(x, true); }
   document.querySelectorAll(".h.running .htime").forEach((el) => { const li = el.closest("[data-helpers]"); if (li) paintHelpers(li.dataset.helpers); });
 }, 4000);
+
+/* ---------- Project brief and new projects ---------- */
+async function openBrief(p) {
+  let r; try { r = await api(`/api/brief?project=${p.id}`); } catch (e) { return toast(e.message, true); }
+  document.body.insertAdjacentHTML("beforeend", `<div class="viewer" id="viewer" role="dialog" aria-label="${esc(p.name)} brief"><div class="vbox glass"><div class="vhead"><div class="vt"><b>${esc(p.name)} · brief</b><span>${esc(r.path)} · every session reads this first and keeps it current</span></div><button class="btn" id="bopen">Open to edit</button><button class="x" id="vclose" aria-label="Close">×</button></div><div class="vbody"><div class="brief-md m">${md(r.text || "(empty)")}</div></div></div></div>`);
+  const v = $("viewer"), close = () => v.remove();
+  v.onclick = (e) => { if (e.target === v) close(); }; $("vclose").onclick = close;
+  $("bopen").onclick = () => api("/api/briefopen", { project: p.id }).catch((e) => toast(e.message, true));
+}
+const SWATCHES = ["#7c3aed", "#0071e3", "#9a7633", "#0f766e", "#d93025", "#ea8a00", "#db2777", "#4f46e5", "#16a34a", "#475569"];
+function newProject() {
+  document.body.insertAdjacentHTML("beforeend", `<div class="viewer" id="viewer" role="dialog" aria-label="New project"><form class="vbox glass small npform" id="npform">
+    <div class="vhead"><div class="vt"><b>New project or client</b><span>It gets its own roadmap, board, meetings, files, sessions and a brief.</span></div><button type="button" class="x" id="vclose" aria-label="Close">×</button></div>
+    <div class="npbody">
+      <label for="np-name">Name<input id="np-name" required maxlength="40" placeholder="e.g. Crumb and Co" autocomplete="off"></label>
+      <label for="np-folder">Folder on this Mac<input id="np-folder" required placeholder="~/Projects/crumb-and-co" autocomplete="off"><small>Where its work lives; sessions start here. It must already exist.</small></label>
+      <label for="np-tracks">Tracks<input id="np-tracks" placeholder="e.g. Website, Ads, Social" autocomplete="off"><small>Comma-separated. Leave empty for one track; you can add and rename them later.</small></label>
+      <div class="nprow"><span class="lbl">Colour</span><span class="swatches">${SWATCHES.map((c, i) => `<button type="button" class="sw-pick" data-c="${c}" aria-pressed="${i === 0}" style="background:${c}" aria-label="Colour ${c}"></button>`).join("")}</span></div>
+      <label for="np-logo">Logo (optional)<input type="file" id="np-logo" accept="image/png,image/jpeg,image/svg+xml,image/webp"></label>
+    </div>
+    <div class="npfoot"><button type="button" class="btn" id="np-cancel">Cancel</button><button class="btn primary" id="np-go">Create project</button></div></form></div>`);
+  const v = $("viewer"), close = () => v.remove();
+  let color = SWATCHES[0];
+  v.querySelectorAll(".sw-pick").forEach((b) => (b.onclick = () => { color = b.dataset.c; v.querySelectorAll(".sw-pick").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); }));
+  $("vclose").onclick = close; $("np-cancel").onclick = close; v.onclick = (e) => { if (e.target === v) close(); };
+  $("np-name").oninput = () => { const f = $("np-folder"); if (!f.dataset.touched) f.value = "~/Projects/" + $("np-name").value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); };
+  $("np-folder").oninput = () => { $("np-folder").dataset.touched = "1"; };
+  $("np-name").focus();
+  $("npform").onsubmit = async (e) => {
+    e.preventDefault(); $("np-go").disabled = true;
+    try {
+      const p = await api("/api/project", { name: $("np-name").value, folder: $("np-folder").value, tracks: $("np-tracks").value, color });
+      const logo = $("np-logo").files[0];
+      if (logo) { const r = await fetch(`/api/logo?project=${p.id}`, { method: "POST", headers: { "Content-Type": logo.type }, body: logo }); if (!r.ok) toast((await r.json()).error || "The logo didn't upload.", true); }
+      close(); await refresh(); S.view = p.id; S.track = "all"; S.tab = "chats"; render(); toast(`${p.name} is on the Desk. Start its first session with +.`);
+    } catch (err) { toast(err.message, true); $("np-go").disabled = false; }
+  };
+}
+document.getElementById("newproj").onclick = newProject;
 
 /* ---------- Files: what Claude made ---------- */
 const KINDS = [["all", "All"], ["pdf", "PDFs"], ["doc", "Documents"], ["sheet", "Sheets"], ["slides", "Slides"], ["image", "Images"], ["video", "Videos"], ["html", "Pages"], ["artifact", "Artifacts"], ["print", "Print files"], ["text", "Notes"], ["other", "Other"]];
@@ -719,6 +794,8 @@ function wireChats(p, key) {
   b.querySelectorAll("[data-close]").forEach((x) => (x.onclick = () => { S.panes[key] = S.panes[key].filter((id) => id !== x.dataset.close); render(); }));
   b.querySelectorAll("[data-pane]").forEach((x) => x.addEventListener("focusin", () => { if (S.focus[key] !== x.dataset.pane) { S.focus[key] = x.dataset.pane; b.querySelectorAll(".pane-c").forEach((y) => y.classList.toggle("focus", y === x && S.panes[key].length > 1)); } }));
   wireHelpers(b);
+  b.querySelectorAll("[data-runit]").forEach((x) => (x.onclick = () => { const [sid, i] = x.dataset.runit.split("|"); const d = findS(sid)?.s.denied?.[+i]; const ta = $("say-" + sid); if (d && ta) { ta.value = "! " + d.command; ta.dispatchEvent(new Event("input")); ta.focus(); } }));
+  b.querySelectorAll("[data-undeny]").forEach((x) => (x.onclick = async () => { const [pid, sid, i] = x.dataset.undeny.split("|"); const s = findS(sid)?.s; if (!s) return; await op("session.set", pid, { id: sid, denied: (s.denied || []).filter((_, k) => k !== +i) }).catch(() => {}); refresh(); }));
   b.querySelectorAll("[data-stop]").forEach((x) => (x.onclick = () => api("/api/stop", { session: x.dataset.stop }).catch((e) => toast(e.message, true))));
   const sh = $("sheet");
   if (sh) {

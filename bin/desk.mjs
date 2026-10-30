@@ -43,6 +43,7 @@ Tracks and sessions
 
 App
   desk open                                   start the Desk and open it
+  desk restart                                restart it (replies in progress carry on)
 
 The project and track default to this session's own (when it's on the Desk); pass --project
 and --track otherwise. Names or ids both work.`;
@@ -142,8 +143,10 @@ async function open() {
   const port = process.env.DESK_PORT || 4848, url = `http://127.0.0.1:${port}`;
   const up = async () => { try { const r = await fetch(url + "/api/state"); return r.ok && Array.isArray((await r.json()).projects); } catch { return false; } }; // the Desk, not another app on the port
   if (!(await up())) {
-    const log = openSync(join(ROOT, "desk.log"), "a");
-    spawn(process.execPath, [join(ROOT, "server.mjs")], { detached: true, stdio: ["ignore", log, log] }).unref();
+    // Normally macOS keeps the Desk running (LaunchAgent com.blendd.desk); start that, else start it here.
+    let viaLaunchd = false;
+    try { execFileSync("launchctl", ["kickstart", `gui/${process.getuid()}/com.blendd.desk`], { stdio: "ignore" }); viaLaunchd = true; } catch {}
+    if (!viaLaunchd) { const log = openSync(join(ROOT, "desk.log"), "a"); spawn(process.execPath, [join(ROOT, "server.mjs")], { detached: true, stdio: ["ignore", log, log] }).unref(); }
     for (let i = 0; i < 40 && !(await up()); i++) await new Promise((r) => setTimeout(r, 150));
   }
   try { execFileSync("open", [url]); } catch {}
@@ -156,6 +159,9 @@ try {
   if (!cmd || cmd === "help" || flags.help) say(HELP);
   else if (cmd === "status") status();
   else if (cmd === "open") await open();
+  else if (cmd === "restart") { // safe at any time: replies keep running and the new server picks them up
+    try { execFileSync("launchctl", ["kickstart", "-k", `gui/${process.getuid()}/com.blendd.desk`], { stdio: "ignore" }); say("Desk restarted."); }
+    catch { fail("The Desk isn't installed as a login item. Run: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.blendd.desk.plist"); } }
   else if (cmd === "todo") {
     if (a1 === "add") { const pid = project(); const t = run("todo.add", pid, { ...strip(todoFields()), title: a2, track: track(pid), source: "claude" }); say(`Added [${t.id}] ${t.title} (${t.status})`); }
     else if (a1 === "tick") { const t = run("todo.tick", owner("todos", a2), { id: a2 }); say(`[${t.id}] ${t.title}: done again ${t.lastDone.slice(0, 10)}`); }

@@ -9,7 +9,7 @@ const HOME_DIR = homedir();
 import { join, extname, dirname, basename } from "node:path";
 import { randomUUID } from "node:crypto";
 import { ROOT, DATA, expand, tilde, load, loadAll } from "./lib/store.mjs";
-import { run } from "./lib/ops.mjs";
+import { run, createProject, ensureBrief } from "./lib/ops.mjs";
 import { messages, lastWrite, live, agents, transcriptPath } from "./lib/sessions.mjs";
 import { artifactsIn, readFrom } from "./lib/files.mjs";
 import * as runner from "./lib/runner.mjs";
@@ -107,6 +107,15 @@ const shellNote = (s) => {
     done.map((e) => `$ ${e.cmd}   (exit ${e.code ?? "?"})\n\`\`\`\n${e.output || "(no output)"}\n\`\`\``).join("\n\n") + "\n\n";
 };
 
+// No Desk page open: tell Diogo with a plain Mac notification (the page shows its own when open).
+function macNotify(pid, sid, error) {
+  try {
+    const p = load(pid), s = p.sessions.find((x) => x.id === sid || (x.previousIds || []).includes(sid));
+    const msg = error ? "Stopped with an error." : "Replied. Open the Desk to read it.";
+    execFile("osascript", ["-e", `display notification ${JSON.stringify(msg)} with title ${JSON.stringify("Desk · " + p.name)} subtitle ${JSON.stringify(s?.name || "")}`], () => {});
+  } catch {}
+}
+
 // ---- sending a message to a session ----
 // What to do with a run's events, for one session. Built when a message is sent, and rebuilt for
 // runs a restarted server picks up again (they keep going while the server restarts).
@@ -116,7 +125,9 @@ function handler(pid, sid, wasNew) {
     if (ev.type === "start") { streaming.set(cur, ""); if (wasNew) run("session.set", pid, { id: cur, started: true }); }
     if (ev.type === "id") { const old = cur; cur = ev.id; streaming.set(cur, streaming.get(old) || ""); streaming.delete(old); try { run("session.set", pid, { id: old, newId: cur }); } catch {} broadcast({ type: "renamed", from: old, to: cur }); return; }
     if (ev.type === "delta") streaming.set(cur, (streaming.get(cur) || "") + ev.text);
+    if (ev.type === "denied") try { run("session.set", pid, { id: cur, addDenied: ev.items.map((d) => ({ ...d, at: new Date().toISOString() })) }); } catch {}
     if (ev.type === "message") { const t = streaming.get(cur); if (t && !t.endsWith("\n\n")) streaming.set(cur, t + "\n\n"); }
+    if (ev.type === "done" && !clients.size) macNotify(pid, cur, ev.error);
     if (ev.type === "done") { streaming.delete(cur); msgCache.delete(cur); if (ev.error && wasNew) try { run("session.set", pid, { id: cur, started: false }); } catch {} }
     broadcast({ ...ev, type: "stream", kind: ev.type, session: cur });
     if (ev.type === "done" || ev.type === "start") check();
@@ -187,6 +198,18 @@ async function upload(req, res, q) {
     await new Promise((r) => out.end(r));
     if (tooBig) { try { unlinkSync(path); } catch {} return json(res, 413, { error: "That file is over 500 MB." }); }
     json(res, 200, { path, name: raw, size, type: req.headers["content-type"] || "" });
+  } catch (e) { json(res, 400, { error: e.message }); }
+}
+// A project's logo, uploaded from the + Project form: kept with the page (web/logos/<id>.<ext>).
+async function saveLogo(req, res, q) {
+  try {
+    const pid = load(q.get("project")).id;
+    const ext = { "image/png": ".png", "image/jpeg": ".jpg", "image/svg+xml": ".svg", "image/webp": ".webp" }[req.headers["content-type"]];
+    if (!ext) return json(res, 400, { error: "The logo has to be a PNG, JPG, SVG or WebP image." });
+    let b = []; let n = 0; for await (const c of req) { n += c.length; if (n > 5e6) return json(res, 413, { error: "Keep the logo under 5 MB." }); b.push(c); }
+    writeFileSync(join(WEB, "logos", pid + ext), Buffer.concat(b));
+    run("project.set", pid, { logo: `/logos/${pid}${ext}?v=${Date.now()}` });
+    json(res, 200, { ok: true });
   } catch (e) { json(res, 400, { error: e.message }); }
 }
 function sendFile(res, path) {
@@ -322,6 +345,9 @@ const routes = {
     return { ok: true, trashed: !!f.path };
   },
   "POST /api/fileopen": (b) => { const f = fileOf(b.project, b.id); execFileSync("open", b.finder ? ["-R", f.path] : [f.path]); return { ok: true }; },
+  "POST /api/project": (b) => createProject(b),
+  "POST /api/briefopen": (b) => { execFileSync("open", [expand(ensureBrief(load(b.project)))]); return { ok: true }; },
+  "GET /api/brief": (q) => { const p = load(q.get("project")); const path = expand(ensureBrief(p)); return { path: tilde(path), text: existsSync(path) ? readFileSync(path, "utf8").slice(0, 200000) : "" }; },
   "POST /api/shell": (b) => shell(b.project, b.session, b.cmd),
   "POST /api/stop": (b) => ({ stopped: runner.stop(b.session) }),
   "POST /api/session": (b) => {
@@ -389,6 +415,7 @@ const server = http.createServer(async (req, res) => {
     }
     // Attachments: the file's bytes are the body (no JSON), streamed to uploads/<project>/.
     if (req.method === "POST" && url.pathname === "/api/upload") return upload(req, res, url.searchParams);
+    if (req.method === "POST" && url.pathname === "/api/logo") return saveLogo(req, res, url.searchParams);
     if (req.method === "GET" && url.pathname === "/api/file") return sendFile(res, url.searchParams.get("path"));
     if (req.method === "GET" && url.pathname.startsWith("/f/")) return viewFile(res, url.pathname);
     if (req.method === "GET" && url.pathname === "/api/thumb") return await thumb(res, url.searchParams);

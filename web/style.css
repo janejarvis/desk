@@ -274,6 +274,23 @@ details.note div{padding-top:4px}
 .sheet .r{grid-column:1/-1;display:flex;gap:8px;justify-content:flex-end}
 .nochat{display:grid;place-items:center;height:100%;color:var(--ink-3);text-align:center;padding:30px}
 
+/* New project, brief */
+.newproj{margin-top:6px;color:var(--ink-2)}
+.pav.plus{background:transparent;border:1.5px dashed var(--ink-3);color:var(--ink-2);font-size:16px}
+.chip.brief{margin-left:4px}
+.npform{width:min(560px,100%)}
+.npbody{display:flex;flex-direction:column;gap:12px;padding:16px}
+.npbody label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:500;color:var(--ink-2)}
+.npbody input:not([type=file]){height:38px;border-radius:10px;border:1px solid var(--hair);background:var(--glass-2);padding:0 11px;font-size:13.5px;color:var(--ink)}
+.npbody small{font-weight:400;color:var(--ink-3)}
+.nprow{display:flex;align-items:center;gap:12px}.nprow .lbl{font-size:12px;font-weight:500;color:var(--ink-2)}
+.swatches{display:flex;gap:6px;flex-wrap:wrap}
+.sw-pick{width:24px;height:24px;border-radius:7px;border:0}
+.sw-pick[aria-pressed="true"]{box-shadow:0 0 0 2px var(--glass-2),0 0 0 4px var(--ink)}
+.npfoot{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid var(--hair)}
+.brief-md{align-self:stretch;justify-self:stretch;max-width:860px;margin:0 auto;padding:22px 28px;background:transparent;border:0;box-shadow:none;font-size:13.5px;white-space:pre-wrap}
+@media (min-width:901px){.rail:not(:hover):not(:has(:focus-visible)) .newproj .nm{display:none}}
+
 /* Files */
 .fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
 .fcard{display:flex;flex-direction:column;gap:0;padding:0;border:1px solid var(--edge);background:var(--glass-2);border-radius:var(--r-md);box-shadow:var(--card);overflow:hidden;text-align:left;transition:transform .15s var(--ease),box-shadow .15s}
@@ -327,6 +344,15 @@ details.note div{padding-top:4px}
 .m.me .chip-file.sent{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.2);box-shadow:none}
 .m.me .chip-file.sent .fn{color:inherit}.m.me .chip-file.sent .ext{background:rgba(255,255,255,.18);color:inherit}
 .pane-c.dropping{outline:2px dashed var(--accent);outline-offset:-6px;background:var(--accent-soft)}
+
+/* Steps refused because they need Diogo's OK */
+.m.denied{align-self:stretch;max-width:100%;white-space:normal;background:var(--warn-soft);border:1px solid var(--warn);border-radius:12px;padding:9px 11px;display:flex;flex-direction:column;gap:5px}
+.m.denied .dh{display:flex;justify-content:space-between;gap:8px;font-size:12px}.m.denied .dh b{color:var(--warn)}.m.denied .dh span{color:var(--ink-3);font:500 11px var(--mono)}
+.m.denied .dd{font-size:13px;color:var(--ink)}
+.m.denied .dc{display:block;font:11.5px/1.45 var(--mono);background:var(--glass-2);border-radius:7px;padding:6px 8px;white-space:pre-wrap;overflow-wrap:anywhere}
+.m.denied .dx{font-size:12px;color:var(--ink-2)}
+.m.denied .db{display:flex;gap:10px;align-items:center}
+.btn.small{height:28px;padding:0 11px;font-size:12px}
 
 /* "! command" results in a pane */
 .m.shell{align-self:stretch;max-width:100%;background:transparent;border:1px dashed var(--hair);border-radius:12px;padding:8px 10px;white-space:normal}
@@ -407,9 +433,9 @@ details.note div{padding-top:4px}
 .m.me code{background:rgba(127,127,127,.25)}
 .m pre{font:12.5px/1.5 var(--mono);background:var(--soft);padding:10px 12px;border-radius:10px;overflow:auto;white-space:pre;margin:6px 0}
 .m .steps{display:block;font:500 10.5px/1 var(--mono);opacity:.5;margin-top:6px}
-.m.live{border-color:var(--accent)}
-.m.live .tx{display:block}
-.m.live .tx:empty{display:none}
+.m.streaming{border-color:var(--accent)}
+.m.streaming .tx{display:block}
+.m.streaming .tx:empty{display:none}
 .workline{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--ink-3);padding:2px 0;margin-top:4px;white-space:normal}
 .feed{list-style:none;margin:6px 0 0;padding:0 0 0 2px;display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--ink-3);white-space:normal}
 .feed li{position:relative;padding-left:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

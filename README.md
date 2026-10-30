@@ -28,3 +28,14 @@ and meeting transcripts. Runs on this Mac only (http://127.0.0.1:4848).
 - `node hooks/desk-hook.mjs --self-test`
 - Server against a copy of the data and a stand-in Claude:
   `DESK_DATA=<copy> DESK_PORT=4799 DESK_CLAUDE=$PWD/test/fake-claude.mjs node server.mjs`
+
+## Running
+
+- macOS keeps the Desk running: LaunchAgent `~/Library/LaunchAgents/com.blendd.desk.plist` (starts at
+  login, restarts if it stops). `desk restart` restarts it at any time; replies in progress carry on
+  (they run outside the server, in `run/`, and a new server picks them up).
+- Each project has a brief (`brief` in its data; LQA's own BRIEFING.md, the rest under `briefs/`):
+  every session is told to read it first and keep it current.
+- Steps a session wasn't allowed to take from the Desk (they need Diogo's OK) show in its pane, with
+  "Run it myself (!)". Finished replies notify (browser notification; a Mac notification when no
+  Desk page is open).
