@@ -410,7 +410,8 @@ details.note div{padding-top:4px}
 .m.live{border-color:var(--accent)}
 .m.live .tx{display:block}
 .m.live .tx:empty{display:none}
-.workline{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-3);padding:2px 0;margin-top:4px;white-space:nowrap}
+.workline{display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--ink-3);padding:2px 0;margin-top:4px;white-space:normal}
+.workline .typing{margin-top:5px;flex:none}
 .workline .typing{padding:0}
 .tnote{font-size:11.5px;color:var(--ink-3);margin-top:2px}
 .composer .btn.stop{background:var(--bad);color:#fff}
