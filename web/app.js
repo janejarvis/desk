@@ -106,6 +106,9 @@ function connect() {
 
 function onStream(ev) {
   const st = (S.stream[ev.session] ||= { text: "", tool: "", active: false, queued: 0 });
+  // A reply the server picked up again after a restart never sends "start": show it as soon as it
+  // produces anything, instead of leaving the pane looking frozen.
+  if (!st.active && ["delta", "tool", "message"].includes(ev.kind)) { st.active = true; render(); }
   if (ev.kind === "start") { st.active = true; st.text = ""; st.tool = ""; render(); }
   else if (ev.kind === "queued") { st.queued++; }
   else if (ev.kind === "message") { if (st.text && !st.text.endsWith("\n\n")) st.text += "\n\n"; }
