@@ -80,7 +80,7 @@ const stateOf = (s) => (S.stream[s.id]?.active || (s.state === "idle" && (S.agen
 async function refresh() {
   try { D = await api("/api/state"); $("offline")?.remove(); }
   catch { if (!$("offline")) document.body.insertAdjacentHTML("beforeend", '<div class="offline" id="offline">The Desk server isn\'t running. Start it with: desk open</div>'); return; }
-  if (S.view !== "all" && !proj()) { S.view = "all"; S.track = "all"; }
+  if (!proj()) { S.view = P()[0]?.id || "all"; S.track = "all"; }
   if (proj() && S.track !== "all" && !proj().tracks.some((t) => t.id === S.track)) S.track = "all";
   render();
 }
@@ -140,8 +140,7 @@ function render() {
 function renderRail() {
   const r = $("rail");
   const unread = (ss) => ss.some((s) => stateOf(s) === "waiting");
-  const allS = P().flatMap((p) => p.sessions);
-  let h = `<button class="ritem" aria-current="${S.view === "all"}" data-go="all" title="All projects"><span class="pav${unread(allS) ? " unread" : ""}" style="background:var(--me);color:var(--me-ink)">${I.grid}</span><span class="nm">All projects</span></button><div class="rail-label">Projects</div>`;
+  let h = `<div class="rail-label">Projects</div>`;
   for (const p of P()) {
     const cur = S.view === p.id;
     h += `<button class="ritem" aria-current="${cur}" data-go="${p.id}" title="${esc(p.name)}"><span class="pav${unread(p.sessions) ? " unread" : ""}${p.logo ? " logo" : ""}" style="background:${p.color}">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : esc(p.name[0])}</span><span class="nm">${esc(p.name)}</span><span class="live">${p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;

@@ -107,23 +107,34 @@ const shellNote = (s) => {
 };
 
 // ---- sending a message to a session ----
+// What to do with a run's events, for one session. Built when a message is sent, and rebuilt for
+// runs a restarted server picks up again (they keep going while the server restarts).
+function handler(pid, sid, wasNew) {
+  let cur = sid;
+  return (ev) => {
+    if (ev.type === "start") { streaming.set(cur, ""); if (wasNew) run("session.set", pid, { id: cur, started: true }); }
+    if (ev.type === "id") { const old = cur; cur = ev.id; streaming.set(cur, streaming.get(old) || ""); streaming.delete(old); try { run("session.set", pid, { id: old, newId: cur }); } catch {} broadcast({ type: "renamed", from: old, to: cur }); return; }
+    if (ev.type === "delta") streaming.set(cur, (streaming.get(cur) || "") + ev.text);
+    if (ev.type === "message") { const t = streaming.get(cur); if (t && !t.endsWith("\n\n")) streaming.set(cur, t + "\n\n"); }
+    if (ev.type === "done") { streaming.delete(cur); msgCache.delete(cur); if (ev.error && wasNew) try { run("session.set", pid, { id: cur, started: false }); } catch {} }
+    broadcast({ ...ev, type: "stream", kind: ev.type, session: cur });
+    if (ev.type === "done" || ev.type === "start") check();
+  };
+}
+// A message that waited for a busy session, turned back into a job when its turn comes.
+runner.onQueued((pid, sid, text) => {
+  const p = load(pid); const s = p.sessions.find((x) => x.id === sid || (x.previousIds || []).includes(sid));
+  if (!s) return null;
+  return { job: { session: { ...s, cwd: expand(s.cwd), started: true }, project: p, trackName: p.tracks.find((t) => t.id === s.track)?.name || "", text, fork: false }, on: handler(pid, s.id, false) };
+});
 function sendTo(pid, sid, text) {
   const p = load(pid);
   const s = p.sessions.find((x) => x.id === sid);
   if (!s) throw Object.assign(new Error("That session isn't on the desk any more."), { user: true });
   const note = shellNote(s);
   if (note) { text = note + text; run("session.set", pid, { id: s.id, pendingShell: (s.pendingShell || []).filter((e) => e.state !== "done") }); }
-  const fork = s.started !== false && !!live().get(s.id)?.interactive;
-  let cur = s.id;
-  runner.send({ session: { ...s, cwd: expand(s.cwd) }, project: p, trackName: p.tracks.find((t) => t.id === s.track)?.name || "", text, fork }, (ev) => {
-    if (ev.type === "start") { streaming.set(cur, ""); if (s.started === false) run("session.set", pid, { id: cur, started: true }); }
-    if (ev.type === "id") { const old = cur; cur = ev.id; streaming.set(cur, streaming.get(old) || ""); streaming.delete(old); run("session.set", pid, { id: old, newId: cur }); broadcast({ type: "renamed", from: old, to: cur }); return; }
-    if (ev.type === "delta") streaming.set(cur, (streaming.get(cur) || "") + ev.text);
-    if (ev.type === "message") { const t = streaming.get(cur); if (t && !t.endsWith("\n\n")) streaming.set(cur, t + "\n\n"); }
-    if (ev.type === "done") { streaming.delete(cur); msgCache.delete(cur); if (ev.error && s.started === false) run("session.set", pid, { id: cur, started: false }); }
-    broadcast({ ...ev, type: "stream", kind: ev.type, session: cur });
-    if (ev.type === "done" || ev.type === "start") check();
-  });
+  const fork = s.started !== false && !runner.isRunning(s.id) && !!live().get(s.id)?.interactive;
+  runner.send({ session: { ...s, cwd: expand(s.cwd) }, project: p, trackName: p.tracks.find((t) => t.id === s.track)?.name || "", text, fork }, handler(pid, s.id, s.started === false));
 }
 
 const slug = (s) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "meeting";
@@ -263,4 +274,8 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, "127.0.0.1", () => console.log(`Desk is open at http://127.0.0.1:${PORT}`));
+server.listen(PORT, "127.0.0.1", () => {
+  // Replies that were running when the server last stopped carry on: pick them up again.
+  const n = runner.resume((m) => { if (m.sid) streaming.set(m.sid, ""); return handler(m.project, m.sid, false); });
+  console.log(`Desk is open at http://127.0.0.1:${PORT}` + (n ? ` (picked up ${n} reply${n === 1 ? "" : "s"} still running)` : ""));
+});
