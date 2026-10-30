@@ -120,6 +120,7 @@ function onStream(ev) {
   else if (ev.kind === "done") {
     st.active = false; st.queued = Math.max(0, st.queued - 1);
     if (ev.error) toast(ev.error, true);
+    else if (ev.wrote === false) toast("The session finished without writing a reply. Ask it what happened.", true);
     { const x = findS(ev.session); if (x) notify(`${x.p.name} · ${x.s.name}`, ev.error ? "Stopped with an error: " + ev.error : (st.text || "").replace(/\s+/g, " ").trim() || "Replied.", ev.session); }
     delete S.msgs[ev.session]; st.text = ""; refresh();
   }
