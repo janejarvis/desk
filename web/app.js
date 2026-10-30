@@ -519,6 +519,7 @@ function paneHTML({ p: sp, s }, key) {
   const label = `${sp.name} · ${trName(sp, s.track)}`; // shown on hover only: the pane header is just the session's name
   const st = stateOf(s), live = S.stream[s.id], msgs = S.msgs[s.id]?.list;
   let body = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => `<div class="m ${m.who}">${md(m.text)}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
+  for (const e of s.pendingShell || []) body += `<div class="m shell"><div class="sh-h"><code>$ ${esc(e.cmd)}</code><span>${e.state === "running" ? "running in Terminal…" : `exit ${e.code ?? "?"} · goes with your next message`}</span></div>${e.state === "done" ? `<pre>${esc(e.output || "(no output)")}</pre>` : ""}</div>`;
   if (live?.active) body += `<div class="m claude live" data-live="${esc(s.id)}"><span class="tx">${live.text ? md(live.text) : ""}</span><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">${live.tool ? "Working · " + esc(live.tool) : "Working"}</span></span></div>`;
   return `<section class="pane-c${S.focus[key] === s.id && S.panes[key].length > 1 ? " focus" : ""}${st === "waiting" ? " unread" : ""}" data-pane="${s.id}">
    <div class="convhead"><div class="l"><span class="sw" style="background:${sp.color}" title="${esc(label)}"></span>
@@ -526,7 +527,7 @@ function paneHTML({ p: sp, s }, key) {
      <div class="hr"><span class="state ${st}">${st === "working" ? "Working" : st === "waiting" ? "New reply" : "Idle"}</span><button class="x" data-close="${s.id}" aria-label="Close this pane" title="Close pane">×</button></div></div>
    <div class="msgs" data-for="${s.id}">${body}</div>
    <div class="helpers" data-helpers="${esc(s.id)}">${helpersHTML(s.id)}</div>
-   <form class="composer" data-send="${s.id}" data-p="${sp.id}"><textarea id="say-${s.id}" rows="1" placeholder="Message ${esc(s.name)}…"></textarea>${live?.active ? `<button type="button" class="btn stop" data-stop="${s.id}" aria-label="Stop" title="Stop">${I.stop}</button>` : ""}<button class="btn primary" aria-label="Send" disabled>${I.send}</button></form></section>`;
+   <form class="composer" data-send="${s.id}" data-p="${sp.id}"><textarea id="say-${s.id}" rows="1" placeholder="Message ${esc(s.name)}…  (! runs a command)"></textarea>${live?.active ? `<button type="button" class="btn stop" data-stop="${s.id}" aria-label="Stop" title="Stop">${I.stop}</button>` : ""}<button class="btn primary" aria-label="Send" disabled>${I.send}</button></form></section>`;
 }
 /* ---------- Helper agents (subagents) at the bottom of each pane ---------- */
 const dur = (a, b) => { const s = Math.max(0, Math.round((new Date(b || Date.now()) - new Date(a)) / 1000)); return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`; };
@@ -610,6 +611,11 @@ function wireChats(p, key) {
     ta.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } };
     form.onsubmit = async (e) => {
       e.preventDefault(); const v = ta.value.trim(); if (!v) return;
+      if (v.startsWith("!")) { // like ! in Claude Code: run it in a real terminal, output goes with the next message
+        try { await api("/api/shell", { project: form.dataset.p, session: sid, cmd: v.slice(1) }); ta.value = ""; try { sessionStorage.removeItem("draft-" + sid); } catch {} toast("Opened in Terminal. Its output lands here when it finishes."); refresh(); }
+        catch (err) { toast(err.message, true); }
+        return;
+      }
       const list = S.msgs[sid]?.list || []; list.push({ who: "me", text: v, at: new Date().toISOString() });
       S.msgs[sid] = { ...(S.msgs[sid] || {}), list };
       ta.value = ""; try { sessionStorage.removeItem("draft-" + sid); } catch {}

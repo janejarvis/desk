@@ -4,7 +4,8 @@
 import http from "node:http";
 import { readFileSync, existsSync, mkdirSync, writeFileSync, watch, statSync, unlinkSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
+const HOME_DIR = homedir();
 import { join, extname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { ROOT, DATA, expand, tilde, load, loadAll } from "./lib/store.mjs";
@@ -63,11 +64,55 @@ function check() {
 setInterval(check, 2000);
 let wt; try { mkdirSync(DATA, { recursive: true }); watch(DATA, () => { clearTimeout(wt); wt = setTimeout(() => broadcast({ type: "state" }), 120); }); } catch {}
 
+// ---- "! command": run it in a real Terminal window, like ! in Claude Code ----
+// Interactive commands (vercel login, gh auth login…) need a real terminal, so the Desk opens one in
+// the session's folder and records it. When it finishes, its output is shown in the pane and goes to
+// the session with the next message, as Claude Code does with !.
+const RUN = join(ROOT, "run");
+const clean = (t) => t.replace(/\x1b\][^\x07]*(\x07|\x1b\\)/g, "").replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, "").replace(/\x1b[()][A-Z0-9]/g, "")
+  .replace(/\r\n/g, "\n").replace(/[^\n]*\r(?!\n)/g, "").replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").replace(/^\^D\x08*/gm, "").trim();
+function shell(pid, sid, cmd) {
+  const p = load(pid); const s = p.sessions.find((x) => x.id === sid);
+  if (!s) throw Object.assign(new Error("That session isn't on the desk any more."), { user: true });
+  cmd = String(cmd || "").trim(); if (!cmd) throw Object.assign(new Error("Type a command after the !"), { user: true });
+  mkdirSync(RUN, { recursive: true });
+  const id = randomUUID().slice(0, 8), cwd = expand(s.cwd) || HOME_DIR;
+  const q = (x) => "'" + String(x).replace(/'/g, "'\\''") + "'";
+  const log = join(RUN, id + ".log"), done = join(RUN, id + ".done"), inner = join(RUN, id + ".sh"), win = join(RUN, id + ".command");
+  // The trap writes the exit code however the command ends, even if it calls exit itself.
+  writeFileSync(inner, `trap 'echo $? > ${q(done).replace(/'/g, "'\\''")}' EXIT\ncd ${q(cwd)} || exit 1\n${cmd}\n`);
+  writeFileSync(win, `#!/bin/zsh -l\nclear\nprintf '\\033]0;Desk · ${p.name.replace(/'/g, "")} · ${s.name.replace(/'/g, "")}\\007'\necho "Desk · ${p.name.replace(/"/g, "")} · ${s.name.replace(/"/g, "")}   (${tilde(cwd).replace(/"/g, "")})"\nprintf '%s\\n\\n' "$ "${q(cmd)}\nscript -q ${q(log)} /bin/zsh -l ${q(inner)}\necho\necho "Finished. The output is on the Desk and goes to the session with your next message. You can close this window."\n`, { mode: 0o755 });
+  execFileSync("open", ["-a", "Terminal", win]);
+  const entry = { id, cmd, state: "running", at: new Date().toISOString() };
+  run("session.set", pid, { id: sid, pendingShell: [...(s.pendingShell || []), entry] });
+  const t = setInterval(() => {
+    if (!existsSync(done)) return;
+    clearInterval(t);
+    let out = ""; try { out = clean(readFileSync(log, "utf8")); } catch {}
+    const code = (() => { try { return +readFileSync(done, "utf8").trim(); } catch { return null; } })();
+    if (out.length > 8000) out = "…" + out.slice(-8000);
+    const cur = load(pid).sessions.find((x) => x.id === sid || (x.previousIds || []).includes(sid));
+    if (cur) run("session.set", pid, { id: cur.id, pendingShell: (cur.pendingShell || []).map((e) => (e.id === id ? { ...e, state: "done", code, output: out } : e)) });
+    for (const f of [log, done, inner, win]) try { unlinkSync(f); } catch {}
+    broadcast({ type: "state" });
+  }, 1000);
+  setTimeout(() => clearInterval(t), 6 * 3600e3); // a window left open all day stops being watched
+  return entry;
+}
+const shellNote = (s) => {
+  const done = (s.pendingShell || []).filter((e) => e.state === "done");
+  if (!done.length) return "";
+  return `[Before this message I ran ${done.length === 1 ? "this command" : "these commands"} myself in a terminal, in ${tilde(expand(s.cwd))}:]\n` +
+    done.map((e) => `$ ${e.cmd}   (exit ${e.code ?? "?"})\n\`\`\`\n${e.output || "(no output)"}\n\`\`\``).join("\n\n") + "\n\n";
+};
+
 // ---- sending a message to a session ----
 function sendTo(pid, sid, text) {
   const p = load(pid);
   const s = p.sessions.find((x) => x.id === sid);
   if (!s) throw Object.assign(new Error("That session isn't on the desk any more."), { user: true });
+  const note = shellNote(s);
+  if (note) { text = note + text; run("session.set", pid, { id: s.id, pendingShell: (s.pendingShell || []).filter((e) => e.state !== "done") }); }
   const fork = s.started !== false && !!live().get(s.id)?.interactive;
   let cur = s.id;
   runner.send({ session: { ...s, cwd: expand(s.cwd) }, project: p, trackName: p.tracks.find((t) => t.id === s.track)?.name || "", text, fork }, (ev) => {
@@ -135,6 +180,7 @@ const routes = {
   },
   "POST /api/op": (b) => ({ result: run(b.op, b.project, b) }),
   "POST /api/send": (b) => { if (!String(b.text || "").trim()) throw Object.assign(new Error("Type a message first."), { user: true }); sendTo(b.project, b.session, String(b.text)); return { ok: true }; },
+  "POST /api/shell": (b) => shell(b.project, b.session, b.cmd),
   "POST /api/stop": (b) => ({ stopped: runner.stop(b.session) }),
   "POST /api/session": (b) => {
     const p = load(b.project);
