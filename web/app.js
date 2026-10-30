@@ -109,18 +109,22 @@ function onStream(ev) {
   // A reply the server picked up again after a restart never sends "start": show it as soon as it
   // produces anything, instead of leaving the pane looking frozen.
   if (!st.active && ["delta", "tool", "message"].includes(ev.kind)) { st.active = true; st.since ||= Date.now(); render(); }
-  if (ev.kind === "start") st.since = Date.now();
+  if (ev.kind === "start") { st.since = Date.now(); st.steps = []; }
   if (ev.kind === "start") { st.active = true; st.text = ""; st.tool = ""; render(); }
   else if (ev.kind === "queued") { st.queued++; }
   else if (ev.kind === "message") { if (st.text && !st.text.endsWith("\n\n")) st.text += "\n\n"; }
   else if (ev.kind === "delta") { st.text += ev.text; st.tool = ""; paintLive(ev.session); }
-  else if (ev.kind === "tool") { st.tool = ev.detail || ev.name || st.tool; paintLive(ev.session); }
+  else if (ev.kind === "tool") { st.tool = ev.detail || ev.name || st.tool; step(st, ev.detail || ev.name); paintLive(ev.session); }
+  else if (ev.kind === "thinking") { step(st, "Thinking…"); paintLive(ev.session); }
   else if (ev.kind === "done") {
     st.active = false; st.queued = Math.max(0, st.queued - 1);
     if (ev.error) toast(ev.error, true);
     delete S.msgs[ev.session]; st.text = ""; refresh();
   }
 }
+// The activity feed: one line per step of the reply, newest last; a repeated "Thinking…" isn't stacked.
+function step(st, line) { const s = (st.steps ||= []); if (!line || (line === "Thinking…" && s[s.length - 1] === line)) return; s.push(line); if (s.length > 40) s.splice(0, s.length - 40); }
+const feedHTML = (st) => (st.steps || []).slice(-6).map((l, i, a) => `<li class="${i === a.length - 1 ? "now" : ""}">${esc(l)}</li>`).join("");
 const workLine = (st) => `${st.tool ? "Working · " + st.tool : "Working"}${st.since ? " · " + dur(new Date(st.since).toISOString()) : ""}`;
 // The working line's timer ticks even when nothing new arrives, so a long step never looks frozen.
 setInterval(() => { for (const id in S.stream) if (S.stream[id].active) paintLive(id); }, 1000);
@@ -130,6 +134,7 @@ function paintLive(sid) {
   const st = S.stream[sid];
   el.querySelector(".tx").innerHTML = st.text ? md(st.text) : "";
   el.querySelector(".wk").textContent = workLine(st);
+  const feed = el.querySelector(".feed"); if (feed) feed.innerHTML = feedHTML(st);
   const box = el.closest(".msgs"); if (box && box.scrollHeight - box.scrollTop - box.clientHeight < 160) box.scrollTop = box.scrollHeight;
 }
 
@@ -527,7 +532,7 @@ function paneHTML({ p: sp, s }, key) {
   const st = stateOf(s), live = S.stream[s.id], msgs = S.msgs[s.id]?.list;
   let body = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => `<div class="m ${m.who}">${m.who === "me" ? meText(m.text) : md(m.text)}${m.who === "claude" ? fileCards(sp, s, msgs, m) : ""}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
   for (const e of s.pendingShell || []) body += `<div class="m shell"><div class="sh-h"><code>$ ${esc(e.cmd)}</code><span>${e.state === "running" ? "running in Terminal…" : `exit ${e.code ?? "?"} · goes with your next message`}</span></div>${e.state === "done" ? `<pre>${esc(e.output || "(no output)")}</pre>` : ""}</div>`;
-  if (live?.active) body += `<div class="m claude live" data-live="${esc(s.id)}"><span class="tx">${live.text ? md(live.text) : ""}</span><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">${esc(workLine(live))}</span></span></div>`;
+  if (live?.active) body += `<div class="m claude live" data-live="${esc(s.id)}"><span class="tx">${live.text ? md(live.text) : ""}</span><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">${esc(workLine(live))}</span></span><ul class="feed">${feedHTML(live)}</ul></div>`;
   return `<section class="pane-c${S.focus[key] === s.id && S.panes[key].length > 1 ? " focus" : ""}${st === "waiting" ? " unread" : ""}" data-pane="${s.id}">
    <div class="convhead"><div class="l"><span class="sw" style="background:${sp.color}" title="${esc(label)}"></span>
      <input class="sname" data-rn="${s.id}" data-p="${sp.id}" id="sn-${s.id}" value="${esc(s.name)}" aria-label="Session name" maxlength="40" title="${esc(s.cwd)}"></div>
