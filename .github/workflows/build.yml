@@ -15,7 +15,8 @@ jobs:
     steps:
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Desk ${GITHUB_REF_NAME#v}" --notes "Mac with an Apple chip: Desk-…-arm64.dmg · Intel Mac: Desk-….dmg · Windows: Desk Setup ….exe"
+        run: |
+          gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Desk ${GITHUB_REF_NAME#v}" --notes "Mac with an Apple chip: Desk-…-arm64.dmg · Intel Mac: Desk-….dmg · Windows: Desk Setup ….exe"
   build:
     needs: release
     if: always() && needs.release.result != 'failure'
