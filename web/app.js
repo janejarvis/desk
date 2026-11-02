@@ -6,6 +6,7 @@ const I = {
   pen: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.5 2.5l3 3-8 8H2.5v-3z"/></svg>',
   plus: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>',
   send: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5"/></svg>',
+  mic: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="5.5" y="1.5" width="5" height="8" rx="2.5"/><path d="M3 7.5a5 5 0 0 0 10 0M8 12.5v2"/></svg>',
   clip: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 7.5 8 13a3.5 3.5 0 0 1-5-5l6-6a2.3 2.3 0 0 1 3.3 3.3L6.5 11.2a1.2 1.2 0 0 1-1.7-1.7L10 4.3"/></svg>',
   stop: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="4" y="4" width="8" height="8" rx="1.5"/></svg>',
   folder: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M2 4.5h4l1.5 1.5H14v6.5H2z"/></svg>',
@@ -82,7 +83,7 @@ const people = (p) => [...new Set([ME, ...(p?.todos || []).flatMap((t) => [t.wai
 const stateOf = (s) => (S.stream[s.id]?.active || (s.state === "idle" && (S.agents[s.id] || []).some((a) => a.state === "running")) ? "working" : s.state);
 
 async function refresh() {
-  try { D = await api("/api/state"); if (D.me) ME = D.me; $("offline")?.remove(); }
+  try { D = await api("/api/state"); if (D.me) ME = D.me; if ($("ver")) $("ver").textContent = D.version ? "v" + D.version : ""; $("offline")?.remove(); }
   catch { if (!$("offline")) document.body.insertAdjacentHTML("beforeend", '<div class="offline" id="offline">The Desk server isn\'t running. Start it with: desk open</div>'); return; }
   if (!proj()) { S.view = P()[0]?.id || "all"; S.track = "all"; }
   if (proj() && S.track !== "all" && !proj().tracks.some((t) => t.id === S.track)) S.track = "all";
@@ -97,6 +98,7 @@ function connect() {
   es.onmessage = (e) => {
     let ev; try { ev = JSON.parse(e.data); } catch { return; }
     if (ev.type === "state") soon();
+    else if (ev.type === "leads") { if (proj()?.kind === "sales") loadLeads(); }
     else if (ev.type === "renamed") {
       for (const k in S.panes) S.panes[k] = S.panes[k].map((id) => (id === ev.from ? ev.to : id));
       for (const k in S.focus) if (S.focus[k] === ev.from) S.focus[k] = ev.to;
@@ -186,36 +188,56 @@ function render() {
   if (fid && $(fid)) { const el = $(fid); el.focus({ preventScroll: true }); if (sel) try { el.setSelectionRange(...sel); } catch {} }
 }
 
+const kindOf = (p) => p.kind || "project";
+function railItem(p, unread) {
+  const cur = S.view === p.id;
+  let h = `<button class="ritem" aria-current="${cur}" data-go="${p.id}" title="${esc(p.name)}"><span class="pav${unread(p.sessions) ? " unread" : ""}${p.logo ? " logo" : ""}" style="background:${p.color}">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : esc(p.kind === "sales" ? "€" : p.name[0])}</span><span class="nm">${esc(p.name)}</span><span class="live">${p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;
+  if (cur && p.tracks.length > 1) h += `<div class="subtracks">${p.tracks.map((t) => `<button data-track="${t.id}" aria-current="${S.track === t.id}"><span>${esc(t.name)}</span><span class="live">${p.sessions.filter((s) => s.track === t.id).map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`).join("")}</div>`;
+  return h;
+}
+// Three separate areas (Diogo, 2 Nov 2026): this person's own Projects, then Sales and the Blendd
+// Clients, which are shared with the partner. Each list ends with its own "New" button.
 function renderRail() {
   const r = $("rail");
   const unread = (ss) => ss.some((s) => stateOf(s) === "waiting");
-  let h = `<div class="rail-label">Projects</div>`;
-  for (const p of P()) {
-    const cur = S.view === p.id;
-    h += `<button class="ritem" aria-current="${cur}" data-go="${p.id}" title="${esc(p.name)}"><span class="pav${unread(p.sessions) ? " unread" : ""}${p.logo ? " logo" : ""}" style="background:${p.color}">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : esc(p.name[0])}</span><span class="nm">${esc(p.name)}</span><span class="live">${p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;
-    if (cur && p.tracks.length > 1) h += `<div class="subtracks">${p.tracks.map((t) => `<button data-track="${t.id}" aria-current="${S.track === t.id}"><span>${esc(t.name)}</span><span class="live">${p.sessions.filter((s) => s.track === t.id).map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`).join("")}</div>`;
+  const newBtn = (kind, label) => `<button class="ritem newproj" data-new="${kind}" title="${label}"><span class="pav plus">+</span><span class="nm">${label}</span></button>`;
+  const shared = D.sync?.shared || P().some((p) => p.shared);
+  let h = `<div class="rail-label">Projects</div>` + P().filter((p) => kindOf(p) === "project").map((p) => railItem(p, unread)).join("") + newBtn("project", "New project");
+  if (shared) {
+    const sales = P().filter((p) => kindOf(p) === "sales");
+    if (sales.length) h += `<div class="rsep"></div><div class="rail-label">Sales<span class="rshared">shared</span></div>` + sales.map((p) => railItem(p, unread)).join("");
+    h += `<div class="rsep"></div><div class="rail-label">Clients<span class="rshared">shared</span></div>` + P().filter((p) => kindOf(p) === "client").map((p) => railItem(p, unread)).join("") + newBtn("client", "New client");
   }
   r.innerHTML = h;
   const all = P().flatMap((p) => p.sessions);
   const nbtn = "Notification" in window && Notification.permission === "default" ? `<button class="linkbtn" id="notifyon">Turn on notifications</button><br>` : "";
-  $("railfoot").innerHTML = nbtn + `<b>${fmt(new Date().toISOString())}</b><br>${all.filter((s) => stateOf(s) === "working").length} working · ${all.filter((s) => stateOf(s) === "waiting").length} new replies`;
+  const sy = D.sync || {}, other = ME === "Diogo" ? "João" : "Diogo";
+  const syncLine = !shared ? "" : sy.ok === false ? `<br><span class="syncerr" title="${esc(sy.error || "")}">Sales and Clients aren't syncing: ${esc((sy.error || "").slice(0, 90))}</span>` : sy.at ? `<br>Sales and Clients synced with ${other} · ${esc(clock(sy.at))}` : `<br>Syncing Sales and Clients…`;
+  $("railfoot").innerHTML = nbtn + `<b>${fmt(new Date().toISOString())}</b><br>${all.filter((s) => stateOf(s) === "working").length} working · ${all.filter((s) => stateOf(s) === "waiting").length} new replies` + syncLine;
   $("notifyon")?.addEventListener("click", () => Notification.requestPermission().then(() => render()));
-  r.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { if (S.view !== b.dataset.go) { S.view = b.dataset.go; S.track = "all"; S.sheet = false; S.filter = "all"; S.msForm = null; } render(); }));
+  r.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { if (S.view !== b.dataset.go) { S.view = b.dataset.go; S.track = "all"; S.sheet = false; S.filter = "all"; S.msForm = null; S.lead = null; if (proj()?.kind === "sales") S.tab = "leads"; else if (["leads", "outreach"].includes(S.tab)) S.tab = "chats"; } render(); }));
   r.querySelectorAll("[data-track]").forEach((b) => (b.onclick = () => { S.track = S.track === b.dataset.track ? "all" : b.dataset.track; S.msForm = null; render(); }));
+  r.querySelectorAll("[data-new]").forEach((b) => (b.onclick = () => newProject(b.dataset.new)));
 }
 
+// Sales has its own tabs; every project and client gets a Numbers tab (Diogo, 2 Nov 2026).
+const PTABS = [["chats", "Chats"], ["roadmap", "Roadmap"], ["board", "Board"], ["numbers", "Numbers"], ["meetings", "Meetings"], ["files", "Files"]];
+const SALES_TABS = [["leads", "Leads"], ["outreach", "Outreach"], ["numbers", "Numbers"], ["chats", "Chats"], ["files", "Files"]];
 function renderMain() {
   const p = proj();
+  const tabs = p?.kind === "sales" ? SALES_TABS : p ? PTABS : PTABS.filter(([k]) => k !== "numbers");
+  if (!tabs.some(([k]) => k === S.tab)) S.tab = tabs[0][0];
   const unread = allSessions().some((x) => stateOf(x.s) === "waiting");
   let h = `<div class="top"><h1 title="${p ? esc(p.folder) : ""}">${p ? esc(p.name) : "All projects"}</h1>
-    <div class="seg" role="tablist">${[["chats", "Chats"], ["roadmap", "Roadmap"], ["board", "Board"], ["meetings", "Meetings"], ["files", "Files"]].map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}${k === "chats" && unread ? '<span class="udot" title="New replies"></span>' : ""}</button>`).join("")}</div>`;
+    <div class="seg" role="tablist">${tabs.map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${S.tab === k}">${l}${k === "chats" && unread ? '<span class="udot" title="New replies"></span>' : ""}</button>`).join("")}</div>`;
   if (p) h += `<button class="chip brief" id="briefbtn" title="What every session reads first about ${esc(p.name)}">Brief</button>`;
-  if (p) h += `<div class="tracks">${p.tracks.length > 1 ? `<button class="chip" data-tr="all" aria-pressed="${S.track === "all"}">All tracks</button>` : ""}${p.tracks.map((t) => trackChip(p, t)).join("")}<button class="chip add" id="addtrack">${I.plus}Track</button></div>`;
+  if (p && p.kind !== "sales") h += `<div class="tracks">${p.tracks.length > 1 ? `<button class="chip" data-tr="all" aria-pressed="${S.track === "all"}">All tracks</button>` : ""}${p.tracks.map((t) => trackChip(p, t)).join("")}<button class="chip add" id="addtrack">${I.plus}Track</button></div>`;
   h += `</div><div class="body${S.tab === "chats" ? " chat-body" : ""}" id="body"></div>`;
   $("main").innerHTML = h;
   $("main").querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { S.tab = b.dataset.tab; render(); }));
-  if (p) { wireTracks(p); $("briefbtn").onclick = () => openBrief(p); }
-  ({ chats: renderChats, roadmap: renderRoadmap, board: renderBoard, meetings: renderMeetings, files: renderFiles }[S.tab] || renderChats)();
+  if (p) $("briefbtn").onclick = () => openBrief(p);
+  if (p && p.kind !== "sales") wireTracks(p); else if (p) { $("briefbtn").onclick = () => openBrief(p); }
+  ({ chats: renderChats, roadmap: renderRoadmap, board: renderBoard, meetings: renderMeetings, files: renderFiles, leads: renderLeads, outreach: renderOutreach, numbers: p?.kind === "sales" ? renderSalesNumbers : renderNumbers }[S.tab] || renderChats)();
 }
 
 function trackChip(p, t) {
@@ -582,7 +604,7 @@ function paneHTML({ p: sp, s }, key) {
    <div class="msgs" data-for="${s.id}">${body}</div>
    <div class="helpers" data-helpers="${esc(s.id)}">${helpersHTML(s.id)}</div>
    <div class="chips" data-chips="${esc(s.id)}">${chipsHTML(s.id)}</div>
-   <form class="composer" data-send="${s.id}" data-p="${sp.id}"><button type="button" class="btn round clip" data-clip="${esc(s.id)}" aria-label="Attach files" title="Attach photos, documents, videos…">${I.clip}</button><input type="file" multiple hidden data-file="${esc(s.id)}"><textarea id="say-${s.id}" rows="1" placeholder="Message ${esc(s.name)}…  (! runs a command)"></textarea>${live?.active ? `<button type="button" class="btn stop" data-stop="${s.id}" aria-label="Stop" title="Stop">${I.stop}</button>` : ""}<button class="btn primary" aria-label="Send" disabled>${I.send}</button></form></section>`;
+   ${s.mine === false ? `<div class="rofoot">${esc(s.owner)}'s session · it runs on ${esc(s.owner)}'s computer, so only ${esc(s.owner)} can write here. Start your own with + New session.</div></section>` : ""}${s.mine === false ? "" : `<form class="composer" data-send="${s.id}" data-p="${sp.id}"><button type="button" class="btn round clip" data-clip="${esc(s.id)}" aria-label="Attach files" title="Attach photos, documents, videos…">${I.clip}</button>${D.voice ? `<button type="button" class="btn round mic" data-mic="${esc(s.id)}" aria-label="Hold to talk" title="Hold to talk: speak, let go, and the words go into the box">${I.mic}</button>` : ""}<input type="file" multiple hidden data-file="${esc(s.id)}"><textarea id="say-${s.id}" rows="1" placeholder="Message ${esc(s.name)}…  (! runs a command)"></textarea>${live?.active ? `<button type="button" class="btn stop" data-stop="${s.id}" aria-label="Stop" title="Stop">${I.stop}</button>` : ""}<button class="btn primary" aria-label="Send" disabled>${I.send}</button></form></section>`}`;
 }
 /* ---------- Helper agents (subagents) at the bottom of each pane ---------- */
 const dur = (a, b) => { const s = Math.max(0, Math.round((new Date(b || Date.now()) - new Date(a)) / 1000)); if (!a || isNaN(s)) return ""; return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`; };
@@ -634,9 +656,10 @@ async function openBrief(p) {
   $("bopen").onclick = () => api("/api/briefopen", { project: p.id }).catch((e) => toast(e.message, true));
 }
 const SWATCHES = ["#7c3aed", "#0071e3", "#9a7633", "#0f766e", "#d93025", "#ea8a00", "#db2777", "#4f46e5", "#16a34a", "#475569"];
-function newProject() {
+function newProject(kind = "project") {
+  const client = kind === "client", what = client ? "client" : "project";
   document.body.insertAdjacentHTML("beforeend", `<div class="viewer" id="viewer" role="dialog" aria-label="New project"><form class="vbox glass small npform" id="npform">
-    <div class="vhead"><div class="vt"><b>New project or client</b><span>It gets its own roadmap, board, meetings, files, sessions and a brief.</span></div><button type="button" class="x" id="vclose" aria-label="Close">×</button></div>
+    <div class="vhead"><div class="vt"><b>New ${what}</b><span>${client ? "Shared with " + (ME === "Diogo" ? "João" : "Diogo") + ": roadmap, board, numbers, meetings, files, chats and a brief." : "It gets its own roadmap, board, numbers, meetings, files, sessions and a brief."}</span></div><button type="button" class="x" id="vclose" aria-label="Close">×</button></div>
     <div class="npbody">
       <label for="np-name">Name<input id="np-name" required maxlength="40" placeholder="e.g. Crumb and Co" autocomplete="off"></label>
       <label for="np-folder">Folder on this computer<span class="np-pick"><input id="np-folder" required placeholder="~/Projects/crumb-and-co" autocomplete="off"><button type="button" class="btn" id="np-choose">Choose…</button></span><small>Where its work lives; sessions start here. If it doesn't exist yet, it's created.</small></label>
@@ -644,26 +667,25 @@ function newProject() {
       <div class="nprow"><span class="lbl">Colour</span><span class="swatches">${SWATCHES.map((c, i) => `<button type="button" class="sw-pick" data-c="${c}" aria-pressed="${i === 0}" style="background:${c}" aria-label="Colour ${c}"></button>`).join("")}</span></div>
       <label for="np-logo">Logo (optional)<input type="file" id="np-logo" accept="image/png,image/jpeg,image/svg+xml,image/webp"></label>
     </div>
-    <div class="npfoot"><button type="button" class="btn" id="np-cancel">Cancel</button><button class="btn primary" id="np-go">Create project</button></div></form></div>`);
+    <div class="npfoot"><button type="button" class="btn" id="np-cancel">Cancel</button><button class="btn primary" id="np-go">Create ${what}</button></div></form></div>`);
   const v = $("viewer"), close = () => v.remove();
   let color = SWATCHES[0];
   v.querySelectorAll(".sw-pick").forEach((b) => (b.onclick = () => { color = b.dataset.c; v.querySelectorAll(".sw-pick").forEach((x) => x.setAttribute("aria-pressed", String(x === b))); }));
   $("vclose").onclick = close; $("np-cancel").onclick = close; v.onclick = (e) => { if (e.target === v) close(); };
-  $("np-name").oninput = () => { const f = $("np-folder"); if (!f.dataset.touched) f.value = "~/Projects/" + $("np-name").value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); };
+  $("np-name").oninput = () => { const f = $("np-folder"); if (!f.dataset.touched) f.value = (client ? "~/Blendd/" : "~/Projects/") + $("np-name").value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); };
   $("np-folder").oninput = () => { $("np-folder").dataset.touched = "1"; };
   $("np-choose").onclick = async () => { try { const r = await api("/api/pick-folder", {}); if (r.folder) { $("np-folder").value = r.folder; $("np-folder").dataset.touched = "1"; } else if (r.why) toast(r.why); } catch (err) { toast(err.message, true); } };
   $("np-name").focus();
   $("npform").onsubmit = async (e) => {
     e.preventDefault(); $("np-go").disabled = true;
     try {
-      const p = await api("/api/project", { name: $("np-name").value, folder: $("np-folder").value, tracks: $("np-tracks").value, color });
+      const p = await api("/api/project", { name: $("np-name").value, folder: $("np-folder").value, tracks: $("np-tracks").value, color, kind });
       const logo = $("np-logo").files[0];
       if (logo) { const r = await fetch(`/api/logo?project=${p.id}`, { method: "POST", headers: { "Content-Type": logo.type }, body: logo }); if (!r.ok) toast((await r.json()).error || "The logo didn't upload.", true); }
-      close(); await refresh(); S.view = p.id; S.track = "all"; S.tab = "chats"; render(); toast(`${p.name} is on the Desk. Start its first session with +.`);
+      close(); await refresh(); S.view = p.id; S.track = "all"; S.tab = "chats"; render(); toast(client ? `${p.name} is in Clients, shared. Each track has a chat ready.` : `${p.name} is on the Desk. Each track has a chat ready.`);
     } catch (err) { toast(err.message, true); $("np-go").disabled = false; }
   };
 }
-document.getElementById("newproj").onclick = newProject;
 
 /* ---------- Files: what Claude made ---------- */
 const KINDS = [["all", "All"], ["pdf", "PDFs"], ["doc", "Documents"], ["sheet", "Sheets"], ["slides", "Slides"], ["image", "Images"], ["video", "Videos"], ["html", "Pages"], ["artifact", "Artifacts"], ["print", "Print files"], ["text", "Notes"], ["other", "Other"]];
@@ -821,6 +843,7 @@ function wireChats(p, key) {
     nm.onkeydown = (e) => { if (e.key === "Enter") nm.blur(); };
   });
   wireChips(b);
+  b.querySelectorAll("[data-mic]").forEach((m) => wireMic(m, $("say-" + m.dataset.mic)));
   b.querySelectorAll("[data-clip]").forEach((c) => { const inp = c.parentElement.querySelector("[data-file]"); c.onclick = () => inp.click(); inp.onchange = () => { attachFiles(c.closest("form").dataset.p, c.dataset.clip, [...inp.files]); inp.value = ""; }; });
   b.querySelectorAll("[data-pane]").forEach((pane) => {
     const sid = pane.dataset.pane, pid = pane.querySelector("[data-send]")?.dataset.p;
@@ -888,7 +911,7 @@ document.addEventListener("keydown", (e) => {
 // lifts; just lifting = stop listening, the text stays (her design, 1 Nov: taps no longer send —
 // a tap / double tap mix was too easy to get wrong with live sessions on the other end). Only the Desk window last focused acts, and only while it is
 // on screen. If the relay is not running nothing happens.
-const STEER = "http://127.0.0.1:7899", TABS = ["chats", "roadmap", "board", "meetings", "files"], STEER_ME = Math.random().toString(36).slice(2);
+const STEER = "http://127.0.0.1:7899", STEER_ME = Math.random().toString(36).slice(2);
 const steerMine = () => !document.hidden && (localStorage.getItem("steer-owner") || STEER_ME) === STEER_ME;
 window.addEventListener("focus", () => localStorage.setItem("steer-owner", STEER_ME));
 if (document.hasFocus()) localStorage.setItem("steer-owner", STEER_ME);
@@ -900,8 +923,8 @@ function steerNav(axis, d) {
     const ids = P().map((p) => p.id), i = ids.indexOf(S.view), j = i < 0 ? (d > 0 ? 0 : -1) : i + d;
     if (j >= 0 && j < ids.length) { S.view = ids[j]; S.track = "all"; S.sheet = false; S.filter = "all"; S.msForm = null; moved = true; }
   } else {
-    const i = Math.max(0, TABS.indexOf(S.tab)), j = i + d;
-    if (j >= 0 && j < TABS.length) { S.tab = TABS[j]; S.msForm = null; moved = true; }
+    const T = (proj()?.kind === "sales" ? SALES_TABS : PTABS).map((x) => x[0]), i = Math.max(0, T.indexOf(S.tab)), j = i + d;
+    if (j >= 0 && j < T.length) { S.tab = T[j]; S.msForm = null; moved = true; }
   }
   if (!moved) return;
   save(); render(); fetch(STEER + "/buzz", { method: "POST", body: "18" }).catch(() => {});   // the notch
@@ -984,3 +1007,149 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").cat
 
 refresh();
 connect();
+
+
+/* ---------- Voice: hold the mic, speak, let go — the words land in the message box ---------- */
+// Recorded here, turned into text on this computer (the server's local whisper), never sent anywhere.
+function wireMic(btn, ta) {
+  if (!btn || !ta) return;
+  let rec = null, chunks = [], stream = null;
+  const stop = () => { if (rec && rec.state === "recording") rec.stop(); };
+  btn.onpointerdown = async (e) => {
+    e.preventDefault();
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch { return toast("The Desk can't use the microphone. Allow it in System Settings › Privacy & Security › Microphone.", true); }
+    chunks = []; rec = new MediaRecorder(stream);
+    rec.ondataavailable = (x) => x.data.size && chunks.push(x.data);
+    rec.onstop = async () => {
+      stream.getTracks().forEach((t) => t.stop()); btn.classList.remove("on"); btn.classList.add("busy");
+      const blob = new Blob(chunks, { type: rec.mimeType || "audio/webm" });
+      if (blob.size < 2000) { btn.classList.remove("busy"); return; }
+      try {
+        const r = await fetch("/api/voice", { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
+        const j = await r.json(); if (!r.ok) throw new Error(j.error);
+        if (j.text) { ta.value = (ta.value.trim() ? ta.value.trimEnd() + " " : "") + j.text; ta.dispatchEvent(new Event("input", { bubbles: true })); ta.focus(); }
+      } catch (err) { toast(err.message || "Couldn't turn that into text.", true); }
+      btn.classList.remove("busy");
+    };
+    rec.start(); btn.classList.add("on");
+  };
+  btn.onpointerup = stop; btn.onpointerleave = stop; btn.onpointercancel = stop;
+}
+
+/* ---------- Numbers: a project's or client's figures, kept by its sessions (desk metric) ---------- */
+function renderNumbers() {
+  const p = proj(), b = $("body"), ms = p.metrics || [];
+  let h = ms.length ? `<div class="ntiles">${ms.map((m) => `<div class="card ntile"><div class="nl">${esc(m.label)}</div><div class="nv">${esc(m.value)}</div><div class="meta">${m.target ? `<span class="pill">target ${esc(m.target)}</span>` : ""}<span>${esc(m.note || "")}${m.at ? ` · ${esc(clock(m.at))}${m.by ? " by " + esc(m.by) : ""}` : ""}</span></div><button class="linkbtn nrm" data-mrm="${esc(m.key)}">Remove</button></div>`).join("")}</div>`
+    : `<div class="empty">No numbers yet. Ask in any chat, e.g. "track our monthly reach and newsletter opens on the Numbers tab": Claude keeps them current from then on. Or add one here.</div>`;
+  h += `<form class="addform nform" id="nform"><input type="text" id="n-label" placeholder="What to count, e.g. Posts this month" maxlength="60" required><input type="text" id="n-value" placeholder="Value" maxlength="40" required><input type="text" id="n-target" placeholder="Target (optional)" maxlength="40"><button class="btn primary">Add number</button></form>`;
+  b.innerHTML = h;
+  b.querySelectorAll("[data-mrm]").forEach((x) => (x.onclick = async () => { await op("metric.remove", p.id, { key: x.dataset.mrm }).catch(() => {}); refresh(); }));
+  $("nform").onsubmit = async (e) => { e.preventDefault(); const label = $("n-label").value.trim(); await op("metric.set", p.id, { key: label, label, value: $("n-value").value, target: $("n-target").value || undefined }).catch(() => {}); refresh(); };
+}
+
+/* ---------- Sales: the leads, the outreach and their numbers (shared with the partner) ---------- */
+S.leadsData = null; S.lead = null; S.leadFilter = "all"; S.laneOpen = {};
+async function loadLeads() { try { S.leadsData = await api("/api/leads"); } catch (e) { toast(e.message, true); } if (proj()?.kind === "sales" && ["leads", "outreach", "numbers"].includes(S.tab)) render(); }
+const LANE = { new: "todo", audit: "doing", contacted: "waiting", booked: "ongoing", held: "ongoing", proposal: "sent", trial: "sent", negotiation: "sent", won: "done", lost: "blocked" };
+const replied = (l) => (l.timeline || []).some((t) => /\bthey replied\b|^replied\b/i.test(t.text || "") && !/haven.t|if no|no reply/i.test(t.text || ""));
+const srcPill = (l, d) => { const k = l.source?.kind || "manual", name = d.sources[k] || k; return `<span class="pill ${k === "outbound" ? "src-ob" : k === "form" || k === "booking" ? "src-in" : ""}">${esc(name)}${l.source?.trade ? " · " + esc(l.source.trade) : ""}</span>`; };
+function needLeads() { if (!S.leadsData) { $("body").innerHTML = '<p class="hint">Loading the leads…</p>'; loadLeads(); return true; } return false; }
+
+function renderLeads() {
+  if (needLeads()) return;
+  const d = S.leadsData, b = $("body");
+  const F = { all: ["Everything", () => true], mine: ["Mine", (l) => (l.owner || "") === ME], outbound: ["Outreach", (l) => l.source?.kind === "outbound"], form: ["Website forms", (l) => l.source?.kind === "form"], booking: ["Booking page", (l) => l.source?.kind === "booking"], hand: ["Referral / added by hand", (l) => ["manual", "referral"].includes(l.source?.kind)] };
+  const ls = d.leads.filter(F[S.leadFilter]?.[1] || (() => true));
+  let h = `<div class="tools"><div class="filters">${Object.entries(F).map(([k, [n]]) => `<button class="chip" data-lf="${k}" aria-pressed="${S.leadFilter === k}">${n}</button>`).join("")}</div><button class="chip add" id="addlead">${I.plus}Lead</button></div>`;
+  const lanes = d.stages.filter(([k]) => k !== "notlead");
+  h += `<div class="lsplit${S.lead ? " open" : ""}"><div class="lscroll"><div class="cols leads" style="grid-template-columns:repeat(${lanes.length},minmax(180px,1fr))">`;
+  for (const [k, name] of lanes) {
+    const here = ls.filter((l) => l.stage === k), show = S.laneOpen[k] ? here : here.slice(0, 12);
+    h += `<div class="col ${LANE[k] || "todo"}"><h3>${esc(name)} <span class="lcount">${here.length}</span></h3><div class="drop" data-stage="${k}">`;
+    for (const l of show) h += `<div class="card${S.lead === l.id ? " picked" : ""}" draggable="true" tabindex="0" data-lead="${esc(l.id)}"><div class="tt">${esc(l.company || l.name || l.email)}</div><div class="meta">${srcPill(l, d)}${replied(l) ? '<span class="pill p1">Replied</span>' : ""}${l.auditReads ? '<span class="pill">Audit read</span>' : ""}${l.next?.due ? `<span class="pill${l.next.due < iso(TODAY()) ? " late" : ""}">Next ${esc(l.next.due.slice(5).split("-").reverse().join("/"))}</span>` : ""}<span>${esc(l.owner || "")}</span></div></div>`;
+    if (here.length > show.length) h += `<button class="linkbtn lmore" data-lmore="${k}">+${here.length - show.length} more</button>`;
+    h += `</div></div>`;
+  }
+  const nl = ls.filter((l) => l.stage === "notlead").length;
+  h += `</div>${nl ? `<div class="hint lnote">Not a lead: ${nl} (selling to us, spam, job applications) · kept, in no count</div>` : ""}</div>`;
+  if (S.lead) h += leadDetail(d.leads.find((l) => l.id === S.lead), d);
+  h += `</div>`;
+  b.innerHTML = h;
+  b.querySelectorAll("[data-lf]").forEach((x) => (x.onclick = () => { S.leadFilter = x.dataset.lf; render(); }));
+  b.querySelectorAll("[data-lmore]").forEach((x) => (x.onclick = () => { S.laneOpen[x.dataset.lmore] = true; render(); }));
+  b.querySelectorAll("[data-lead]").forEach((c) => { c.onclick = () => { S.lead = S.lead === c.dataset.lead ? null : c.dataset.lead; render(); }; c.ondragstart = (e) => e.dataTransfer.setData("text/lead", c.dataset.lead); });
+  b.querySelectorAll("[data-stage]").forEach((z) => { z.ondragover = (e) => { e.preventDefault(); z.classList.add("over"); }; z.ondragleave = () => z.classList.remove("over"); z.ondrop = (e) => { e.preventDefault(); z.classList.remove("over"); const id = e.dataTransfer.getData("text/lead"); if (!id) return; if (z.dataset.stage === "lost") { S.lead = id; S.askLost = true; render(); return; } leadSet(id, { stage: z.dataset.stage }); }; });
+  $("addlead").onclick = addLead;
+  wireLeadDetail();
+}
+async function leadSet(id, f) { try { await api("/api/lead", { op: "set", id, ...f }); await loadLeads(); } catch (e) { toast(e.message, true); } }
+
+function leadDetail(l, d) {
+  if (!l) return "";
+  const SV = d.services, has = (k) => (l.services || []).includes(k);
+  const found = l.source?.kind === "outbound" ? `Found by outreach${l.source.trade ? " · " + l.source.trade : ""}` : l.source?.kind === "form" ? `Website form${l.source.campaign ? " · " + l.source.campaign : ""}${l.source.keyword ? " · «" + l.source.keyword + "»" : ""}` : d.sources[l.source?.kind] || "Added by hand";
+  const people = [...new Set([ME, ME === "Diogo" ? "João" : "Diogo", l.owner].filter(Boolean))];
+  let h = `<aside class="mbox ldetail"><div class="ldh"><div class="mt">${esc(l.company || l.name)}</div><button class="x" id="lclose" aria-label="Close">×</button></div>
+  <div class="meta">${srcPill(l, d)}${replied(l) ? '<span class="pill p1">Replied</span>' : ""}${l.optedOut ? '<span class="pill blk">Opted out</span>' : ""}</div>
+  <div class="lkv">${l.name && l.company ? `<span>Person</span><b>${esc(l.name)}</b>` : ""}${l.email ? `<span>Email</span><b><a href="mailto:${esc(l.email)}">${esc(l.email)}</a></b>` : ""}${l.phone ? `<span>Phone</span><b>${esc(l.phone)}</b>` : ""}${l.website ? `<span>Site</span><b><a href="${esc(/^https?:/.test(l.website) ? l.website : "https://" + l.website)}" target="_blank" rel="noopener">${esc(l.website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""))}</a></b>` : ""}<span>Found</span><b>${esc(found)}${l.created ? " · " + esc(clock(l.created)) : ""}</b>
+  <span>Owner</span><b><select class="lsel" id="lowner">${people.map((n) => `<option${n === l.owner ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></b>
+  <span>Stage</span><b><select class="lsel" id="lstage">${d.stages.map(([k, n]) => `<option value="${k}"${k === l.stage ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></b></div>
+  ${S.askLost || l.stage === "lost" ? `<div class="lask"><span>Why lost?</span>${d.lost.map((r) => `<button class="chip" data-lost="${esc(r)}" aria-pressed="${l.lost?.reason === r}">${esc(r)}</button>`).join("")}</div>` : ""}
+  <div class="lsv"><span>Wants</span>${Object.entries(SV).map(([k, n]) => `<button class="chip" data-sv="${k}" aria-pressed="${has(k)}">${esc(n)}</button>`).join("")}</div>
+  <form class="lnext" id="lnext"><input id="lnext-t" placeholder="Next step" value="${esc(l.next?.text || "")}" maxlength="200"><input type="date" id="lnext-d" value="${esc(l.next?.due || "")}"><button class="btn">Save</button></form>`;
+  for (const [i, a] of (l.audits || []).entries()) h += `<a class="lfile" href="/api/leadfile?id=${encodeURIComponent(l.id)}&n=${i}" target="_blank" rel="noopener">📄 ${esc(a.name)}${i === (l.audits.length - 1) && l.auditReads ? `<span>read ${l.auditReads}×</span>` : ""}</a>`;
+  if ((l.emails || []).length) h += `<details class="lmails"><summary>${l.emails.length} email${l.emails.length === 1 ? "" : "s"} sent</summary>${l.emails.map((m) => `<details class="lmail"><summary><b>${esc(m.subject || "(no subject)")}</b><span>${esc(clock(m.at))} · ${esc(m.state)}</span></summary><pre>${esc(m.text || "")}</pre></details>`).join("")}</details>`;
+  h += `<ul class="mlist ltl">${(l.timeline || []).slice(-14).reverse().map((t) => `<li class="${t.kind === "next" ? "doing" : "hist"}"><span class="s"></span><span><span class="lwhen">${esc(clock(t.at))}</span> ${esc(t.text)}</span></li>`).join("")}</ul>
+  <form class="lnote" id="lnoteform"><input id="lnote-t" placeholder="Add a note (a call, what they said…)" maxlength="600"><button class="btn">Add</button></form></aside>`;
+  return h;
+}
+function wireLeadDetail() {
+  const l = S.leadsData?.leads.find((x) => x.id === S.lead); if (!l) return;
+  $("lclose").onclick = () => { S.lead = null; S.askLost = false; render(); };
+  $("lowner").onchange = (e) => leadSet(l.id, { owner: e.target.value });
+  $("lstage").onchange = (e) => { if (e.target.value === "lost") { S.askLost = true; render(); } else { S.askLost = false; leadSet(l.id, { stage: e.target.value }); } };
+  document.querySelectorAll("[data-lost]").forEach((x) => (x.onclick = () => { S.askLost = false; leadSet(l.id, { stage: "lost", reason: x.dataset.lost }); }));
+  document.querySelectorAll("[data-sv]").forEach((x) => (x.onclick = () => { const k = x.dataset.sv, sv = new Set(l.services || []); sv.has(k) ? sv.delete(k) : sv.add(k); leadSet(l.id, { services: [...sv] }); }));
+  $("lnext").onsubmit = (e) => { e.preventDefault(); leadSet(l.id, { next: $("lnext-t").value.trim(), due: $("lnext-d").value }); };
+  $("lnoteform").onsubmit = (e) => { e.preventDefault(); const t = $("lnote-t").value.trim(); if (t) leadSet(l.id, { note: t }); };
+}
+function addLead() {
+  document.body.insertAdjacentHTML("beforeend", `<div class="viewer" id="viewer" role="dialog" aria-label="New lead"><form class="vbox glass small npform" id="lform">
+    <div class="vhead"><div class="vt"><b>New lead</b><span>A referral, a call, LinkedIn, an event. Shared with ${ME === "Diogo" ? "João" : "Diogo"}.</span></div><button type="button" class="x" id="vclose" aria-label="Close">×</button></div>
+    <div class="npbody"><label>Company<input id="lf-c" required maxlength="80"></label><label>Person<input id="lf-n" maxlength="80"></label><label>Email<input id="lf-e" type="email" maxlength="120"></label><label>Phone<input id="lf-p" maxlength="40"></label><label>Website<input id="lf-w" maxlength="120"></label>
+    <label>Where from<select id="lf-s"><option value="referral">Referral</option><option value="manual">Call, LinkedIn, event…</option></select></label><label>Note<input id="lf-x" maxlength="300"></label></div>
+    <div class="npfoot"><button type="button" class="btn" id="np-cancel">Cancel</button><button class="btn primary">Add lead</button></div></form></div>`);
+  const v = $("viewer"), close = () => v.remove();
+  $("vclose").onclick = close; $("np-cancel").onclick = close; v.onclick = (e) => { if (e.target === v) close(); };
+  $("lf-c").focus();
+  $("lform").onsubmit = async (e) => { e.preventDefault(); try { const l = await api("/api/lead", { op: "add", company: $("lf-c").value, name: $("lf-n").value, email: $("lf-e").value, phone: $("lf-p").value, website: $("lf-w").value, source: $("lf-s").value, note: $("lf-x").value }); close(); S.lead = l.id; await loadLeads(); } catch (err) { toast(err.message, true); } };
+}
+
+const ntile = (label, value, small) => `<div class="card ntile"><div class="nl">${esc(label)}</div><div class="nv">${esc(String(value))}</div><div class="meta"><span>${esc(small || "")}</span></div></div>`;
+const ntable = (title, head, rows) => `<div class="card ntable"><div class="nl">${esc(title)}</div><table><tr>${head.map((x) => `<th>${esc(x)}</th>`).join("")}</tr>${rows.map((r) => `<tr>${r.map((c) => `<td>${esc(String(c))}</td>`).join("")}</tr>`).join("")}</table>${rows.length ? "" : '<p class="hint">Nothing yet.</p>'}</div>`;
+
+function renderOutreach() {
+  if (needLeads()) return;
+  const d = S.leadsData, o = d.outreach || {}, ob = d.leads.filter((l) => l.source?.kind === "outbound");
+  const day = 864e5, since = (n) => Object.entries(o.byDay || {}).filter(([k]) => Date.now() - Date.parse(k) < n * day).reduce((a, [, v]) => a + v, 0);
+  const rep = ob.filter(replied), out = ob.filter((l) => l.optedOut);
+  const next = ob.filter((l) => l.next?.due && !["won", "lost", "notlead"].includes(l.stage)).sort((a, b) => a.next.due.localeCompare(b.next.due)).slice(0, 12);
+  const trades = {}; for (const l of ob) { const t = (trades[l.source?.trade || "other"] ||= [l.source?.trade || "other", 0, 0, 0]); t[1]++; if (l.stage !== "new") t[2]++; if (replied(l)) t[3]++; }
+  let h = o.from ? `<div class="banner-note">Sending is paused: the outreach ran in the old Oversight, which is off since 2 Nov. These are its numbers as it left them (${esc(clock(o.at))}); new replies and moves are made here.</div>` : "";
+  h += `<div class="ntiles">${ntile("Sent in the last 7 days", since(7), `${o.sent ?? 0} since ${o.firstSent ? clock(o.firstSent) : "the start"}`)}${ntile("Waiting for a yes", o.waiting ?? 0, `${o.held ?? 0} held back by the guards`)}${ntile("Replied", rep.length, rep.map((l) => l.company).slice(0, 3).join(", "))}${ntile("Opted out", out.length, "never written to again")}</div>`;
+  h += `<div class="ntwo">${ntable("Next follow-ups", ["Lead", "Trade", "Next step", "When"], next.map((l) => [l.company, l.source?.trade || "", l.next.text, l.next.due.split("-").reverse().join("/")]))}${ntable("Trades so far", ["Trade", "Found", "Emailed", "Replied"], Object.values(trades).sort((a, b) => b[1] - a[1]))}</div>`;
+  h += ntable("Sending inboxes", ["Inbox", "Daily limit", "Started"], (o.inboxes || []).map((i) => [i.address, i.dailyCap ? `up to ${i.dailyCap} a day` : "—", i.rampStart ? clock(i.rampStart) : "—"]));
+  if ((o.rules || []).length) h += `<p class="hint">Its rules: ${o.rules.map(esc).join(" ")}</p>`;
+  $("body").innerHTML = h;
+}
+
+function renderSalesNumbers() {
+  if (needLeads()) return;
+  const n = S.leadsData.numbers;
+  let h = `<div class="ntiles">${ntile("Leads, all time", n.total, n.bySource.map((r) => `${r.leads} ${r.source.toLowerCase()}`).join(" · "))}${ntile("Calls booked", n.booked, `from ${n.total} leads`)}${ntile("Won", n.won, "")}${ntile("Ad spend · cost per lead", "—", "from Google Ads once it's connected")}</div>`;
+  h += ntable("Where leads come from, and how far they get", ["Source", "Leads", "Still open", "Contacted", "Call booked", "Proposal", "Won", "Lost"], n.bySource.map((r) => [r.source, r.leads, r.open, r.contacted, r.booked, r.proposal, r.won, r.lost]));
+  h += `<div class="ntwo">${ntable("What leads want", ["Service", "Leads"], Object.entries(n.services).sort((a, b) => b[1] - a[1]))}${ntable("Who has them", ["Owner", "Open", "Won"], n.owners.map((o) => [o.owner, o.open, o.won]))}</div>`;
+  const p = proj(); if ((p.metrics || []).length) h += `<div class="ntiles">${p.metrics.map((m) => ntile(m.label, m.value, m.note)).join("")}</div>`;
+  $("body").innerHTML = h;
+}

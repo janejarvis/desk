@@ -5,6 +5,7 @@ import { readFileSync, existsSync, openSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT, DESK_HOME, ME, HOME, expand, tilde, load, loadAll } from "../lib/store.mjs";
 import { run, projectId, trackOf, ownerOf, STATUSES } from "../lib/ops.mjs";
+import * as leads from "../lib/leads.mjs";
 
 const HELP = `desk — keep ${ME}'s Desk current (roadmap, board, meetings).
 
@@ -33,6 +34,15 @@ Files (what you made for ${ME}: documents, PDFs, images, print files, artifacts)
   desk file remove <id>
     Register every file you hand ${ME}, when you hand it over. Artifacts you publish are
     picked up automatically.
+
+Numbers (the Numbers tab)
+  desk metric set <name> <value> [--label "<plain label>"] [--target T] [--note TEXT]
+  desk metric remove <name>                   desk metrics   list them
+
+Sales (only in the Sales area)
+  desk leads [--stage S] [--owner NAME]       desk lead <name or id>   one lead, with its history
+  desk lead <name or id> <stage> [--reason R] [--note TEXT] [--next TEXT --due YYYY-MM-DD] [--owner NAME]
+  desk lead add "<company>" [--email E] [--phone P] [--website W] [--source referral|manual] [--note TEXT]
 
 Meetings
   desk meeting done <id> --summary "<text>" --action "<text>" [--action ...]
@@ -227,5 +237,19 @@ try {
     if (!s) fail("This session isn't on the Desk.");
     run("session.set", pid, { id: s.id, bg: [...(s.bg || []).filter((b) => b.pid !== id), { pid: id, what: what.slice(0, 120), at: new Date().toISOString() }] });
     say(`The Desk shows "${what}" as working and will message this session when process ${id} ends.`);
+  } else if (cmd === "metric" || cmd === "metrics") {
+    const pid = project();
+    if (cmd === "metrics" || !a1) { const p = load(pid); for (const m of p.metrics || []) say(`  ${m.key.padEnd(22)} ${String(m.value).padEnd(10)} ${m.label}${m.target ? ` (target ${m.target})` : ""}${m.note ? ` · ${m.note}` : ""}`); if (!(p.metrics || []).length) say("No numbers yet."); }
+    else if (a1 === "set") { const m = run("metric.set", pid, { key: a2, value: pos[3], label: flags.label, note: flags.note, target: flags.target }); say(`${m.label}: ${m.value}`); }
+    else if (a1 === "remove") { run("metric.remove", pid, { key: a2 }); say("Removed."); }
+    else fail("Try: desk metric set <name> <value> · desk metric remove <name> · desk metrics");
+  } else if (cmd === "leads" || cmd === "lead") {
+    const pid = project(); if (load(pid).kind !== "sales") fail("Leads live in the Sales area; this session isn't in it.");
+    const line = (l) => `  ${(l.company || l.name).padEnd(34)} ${(leads.STAGE[l.stage] || l.stage).padEnd(14)} ${(leads.SOURCES[l.source?.kind] || l.source?.kind || "").padEnd(13)} ${l.owner || ""}${l.next?.due ? ` · next ${l.next.due}` : ""}  [${l.id}]`;
+    if (cmd === "leads") { const ls = leads.list().filter((l) => (!flags.stage || l.stage === flags.stage) && (!flags.owner || (l.owner || "").toLowerCase() === flags.owner.toLowerCase())); for (const l of ls) say(line(l)); say(`${ls.length} lead(s).`); }
+    else if (a1 === "add") { const l = leads.add({ company: a2, email: flags.email, phone: flags.phone, website: flags.website, source: flags.source, note: flags.note, owner: flags.owner }); say(`Added lead [${l.id}] ${l.company}`); }
+    else if (a1 && a2 && (leads.STAGE[a2] || a2 === "note")) { const l = leads.find(a1); const u = leads.set(l.id, { stage: leads.STAGE[a2] ? a2 : undefined, reason: flags.reason, note: flags.note, next: flags.next, due: flags.due, owner: flags.owner }); say(`${u.company || u.name}: ${leads.STAGE[u.stage]}`); }
+    else if (a1) { const l = leads.find(a1); say(line(l)); for (const k of ["email", "phone", "website"]) if (l[k]) say(`  ${k}: ${l[k]}`); if (l.next) say(`  next: ${l.next.text}${l.next.due ? ` (${l.next.due})` : ""}`); for (const t of (l.timeline || []).slice(-12)) say(`  ${(t.at || "").slice(0, 10)}  ${t.text}`); for (const m of (l.emails || []).slice(-5)) say(`  email ${(m.at || "").slice(0, 10)} ${m.state}: ${m.subject}`); }
+    else fail("Try: desk leads · desk lead <name> · desk lead <name> <stage> · desk lead add \"<company>\"");
   } else fail(`Unknown command "${cmd}". Run: desk help`);
 } catch (e) { fail(e.message); }

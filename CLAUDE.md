@@ -22,3 +22,10 @@ sessions and meetings. Push back on anything more.
   message from the first, across all of a session's ids (`previousIds` + `id`). Never add a message
   limit or read only the end of a transcript; `lib/sessions.mjs` reads each file once and then only
   what was added.
+- Three areas (Diogo, 2 Nov 2026): each person's own Projects; Sales; and the Blendd Clients. Sales
+  and Clients are shared with João through a private git repo (github.com/janejarvis/blendd-desk-data,
+  cloned to the shared folder, `SHARED` in lib/store.mjs; synced every minute by lib/sync.mjs). Never
+  put shared data in this repo: the code repo is public. A shared session belongs to whoever started
+  it (`owner`); the other person reads it (its transcript is mirrored into the shared folder) but can't
+  write to it. Leads are one file each in SHARED/sales/leads (lib/leads.mjs); every project and client
+  has a Numbers tab fed by `desk metric`.

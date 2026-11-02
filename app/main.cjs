@@ -114,6 +114,8 @@ async function startDesk() {
 function showWindow() { if (!win) return; if (win.isMinimized()) win.restore(); win.show(); win.focus(); }
 
 function createWindow() {
+  // The mic button (voice to text) asks for the microphone; only the Desk's own page may use it.
+  require("electron").session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(perm === "media" && wc.getURL().startsWith(URL_)));
   win = new BrowserWindow({
     width: 1400, height: 900, minWidth: 720, minHeight: 500, title: "Desk", backgroundColor: "#f5f5f7",
     icon: path.join(__dirname, "icon.png"),

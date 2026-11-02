@@ -8,10 +8,13 @@ import { tmpdir, homedir } from "node:os";
 const HOME_DIR = homedir();
 import { join, extname, dirname, basename } from "node:path";
 import { randomUUID } from "node:crypto";
-import { ROOT, DESK_HOME, ME, DATA, expand, tilde, load, loadAll, update } from "./lib/store.mjs";
+import { ROOT, DESK_HOME, ME, DATA, SHARED, SHARED_DATA, expand, tilde, load, loadAll, update } from "./lib/store.mjs";
 import { run, createProject, ensureBrief, ensureChats } from "./lib/ops.mjs";
 import { messages, lastWrite, live, agents, transcriptPath } from "./lib/sessions.mjs";
 import { docxText } from "./lib/docx.mjs";
+import * as leadsDb from "./lib/leads.mjs";
+import * as sync from "./lib/sync.mjs";
+const VERSION = (() => { try { return JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version; } catch { return ""; } })();
 
 // What the installed app (app/main.cjs) does better than plain macOS tools, on every computer:
 // notifications and file previews. Left empty, the Mac's own tools are used.
@@ -49,12 +52,13 @@ function sessionView(s, liveMap) {
   let state = "idle";
   if (runner.isRunning(s.id) || l?.status === "busy" || (s.bg || []).length) state = "working";
   else if (last?.who === "claude" && lastAt > (Date.parse(s.seenAt || "") || 0) && Date.now() - lastAt < 3 * 864e5) state = "waiting";
-  return { ...s, cwd: tilde(s.cwd), state, terminal: !!l?.interactive, lastAt, last: last ? { who: last.who, text: last.text.slice(0, 220), at: last.at } : null };
+  return { ...s, cwd: tilde(s.cwd), state, terminal: !!l?.interactive, lastAt, mine: !s.owner || s.owner === ME, last: last ? { who: last.who, text: last.text.slice(0, 220), at: last.at } : null };
 }
 
 function state() {
   const liveMap = live();
-  return { me: ME, projects: loadAll().map((p) => ({ ...p, folder: tilde(p.folder), sessions: p.sessions.map((s) => sessionView(s, liveMap)) })) };
+  return { me: ME, version: VERSION, sync: { ...sync.status, shared: leadsDb.ready() || loadAll().some((p) => p.shared) }, voice: VOICE.ok,
+    projects: loadAll().map((p) => ({ ...p, kind: p.kind || "project", folder: tilde(p.folder), sessions: p.sessions.map((s) => sessionView(s, liveMap)) })) };
 }
 
 // Jobs a session left running past its reply (`desk wait`): when one's process ends, it comes off
@@ -84,6 +88,9 @@ function check() {
 }
 setInterval(check, 2000);
 let wt; try { mkdirSync(DATA, { recursive: true }); watch(DATA, () => { clearTimeout(wt); wt = setTimeout(() => broadcast({ type: "state" }), 120); }); } catch {}
+// The shared projects and leads change on the other computer too (the sync writes them here).
+let ws, wl; try { mkdirSync(SHARED_DATA, { recursive: true }); watch(SHARED_DATA, () => { clearTimeout(ws); ws = setTimeout(() => broadcast({ type: "state" }), 150); }); } catch {}
+try { mkdirSync(join(SHARED, "sales", "leads"), { recursive: true }); watch(join(SHARED, "sales", "leads"), () => { clearTimeout(wl); wl = setTimeout(() => broadcast({ type: "leads" }), 200); }); } catch {}
 
 // ---- "! command": run it in a real Terminal window, like ! in Claude Code ----
 // Interactive commands (vercel login, gh auth login…) need a real terminal, so the Desk opens one in
@@ -185,6 +192,7 @@ function sendTo(pid, sid, text) {
   const p = load(pid);
   const s = p.sessions.find((x) => x.id === sid);
   if (!s) throw Object.assign(new Error("That session isn't on the desk any more."), { user: true });
+  if (s.owner && s.owner !== ME) throw Object.assign(new Error(`This is ${s.owner}'s session; it runs on their computer. Start your own with + New session.`), { user: true });
   const note = shellNote(s);
   if (note) { text = note + text; run("session.set", pid, { id: s.id, pendingShell: (s.pendingShell || []).filter((e) => e.state !== "done") }); }
   const fork = s.started !== false && !runner.isRunning(s.id) && !!live().get(s.id)?.interactive;
@@ -223,6 +231,32 @@ const fillPrompt = (p, t) => [
 // reads them itself. Only files in uploads/ are ever served back (for thumbnails).
 const UPLOADS = join(DESK_HOME, "uploads");
 const MAX_UPLOAD = 500 * 1024 * 1024;
+// ---- voice: hold the mic, speak, let go; the words go into the message box ----
+// Speech is turned into text on this computer by the local whisper server (whisper.cpp); ffmpeg
+// turns the browser's recording into the 16 kHz WAV it reads. No whisper server: no mic button.
+const VOICE = { ok: false, url: process.env.DESK_WHISPER || "http://127.0.0.1:8766/inference" };
+async function checkVoice() {
+  try { const r = await fetch(VOICE.url.replace(/\/inference$/, "/"), { signal: AbortSignal.timeout(3000) }); VOICE.ok = r.ok && !!(await which("ffmpeg")); } catch { VOICE.ok = false; }
+}
+const which = (cmd) => new Promise((r) => execFile(WIN ? "where" : "which", [cmd], (e, out) => r(e ? null : String(out).trim().split(/\r?\n/)[0])));
+checkVoice(); setInterval(checkVoice, 5 * 60e3).unref?.();
+async function voice(req, res) {
+  const tmp = join(tmpdir(), "desk-voice-" + randomUUID().slice(0, 8)), inF = tmp + ".webm", outF = tmp + ".wav";
+  try {
+    const chunks = []; let size = 0;
+    for await (const c of req) { size += c.length; if (size > 25e6) throw Object.assign(new Error("That recording is too long."), { user: true }); chunks.push(c); }
+    writeFileSync(inF, Buffer.concat(chunks));
+    await new Promise((ok, bad) => execFile("ffmpeg", ["-y", "-loglevel", "error", "-i", inF, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", outF], { timeout: 60000 }, (e) => (e ? bad(e) : ok())));
+    const form = new FormData();
+    form.append("file", new Blob([readFileSync(outF)], { type: "audio/wav" }), "voice.wav");
+    form.append("response_format", "json"); form.append("temperature", "0");
+    const r = await fetch(VOICE.url, { method: "POST", body: form, signal: AbortSignal.timeout(120000) });
+    const j = await r.json();
+    json(res, 200, { text: String(j.text || "").replace(/\s+/g, " ").replace(/^\s*\[[^\]]*\]\s*/, "").trim() });
+  } catch (e) { json(res, e.user ? 400 : 500, { error: e.user ? e.message : "Couldn't turn that into text. Try again." }); }
+  finally { for (const f of [inF, outF]) try { unlinkSync(f); } catch {} }
+}
+
 async function upload(req, res, q) {
   try {
     const p = load(q.get("project"));
@@ -392,6 +426,11 @@ const routes = {
   },
   "POST /api/fileopen": (b) => { const f = fileOf(b.project, b.id); execFileSync("open", b.finder ? ["-R", f.path] : [f.path]); return { ok: true }; },
   "POST /api/project": (b) => createProject(b),
+  // ---- Sales: the leads, their numbers and the outreach (lib/leads.mjs) ----
+  "GET /api/leads": () => ({ leads: leadsDb.list(), stages: leadsDb.STAGES, lost: leadsDb.LOST, notLead: leadsDb.NOT_LEAD, services: leadsDb.SERVICES, sources: leadsDb.SOURCES, numbers: leadsDb.numbers(), outreach: leadsDb.outreach() }),
+  "POST /api/lead": (b) => { const l = b.op === "add" ? leadsDb.add(b) : leadsDb.set(b.id, b); broadcast({ type: "leads" }); return l; },
+  // ---- voice: speech to text on this computer (the local whisper server) ----
+  "GET /api/voice": () => ({ ok: VOICE.ok }),
   // The system's own folder picker (the app's, or the Mac's when the Desk runs in a browser).
   "POST /api/pick-folder": async () => {
     if (desk.pickFolder) return { folder: await desk.pickFolder() };
@@ -466,6 +505,12 @@ const server = http.createServer(async (req, res) => {
     }
     // Attachments: the file's bytes are the body (no JSON), streamed to uploads/<project>/.
     if (req.method === "POST" && url.pathname === "/api/upload") return upload(req, res, url.searchParams);
+    if (req.method === "POST" && url.pathname === "/api/voice") return voice(req, res);
+    if (req.method === "GET" && url.pathname === "/api/leadfile") { // a lead's audit PDF, from the shared folder
+      try { const l = leadsDb.get(url.searchParams.get("id")), a = (l.audits || [])[+url.searchParams.get("n")], f = a && expand(a.path);
+        if (!f || !f.startsWith(join(SHARED, "sales") + "/") || f.includes("..") || !existsSync(f)) { res.writeHead(404); return res.end("Not found"); }
+        res.writeHead(200, { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${basename(f)}"` }); return createReadStream(f).pipe(res);
+      } catch { res.writeHead(404); return res.end("Not found"); } }
     if (req.method === "POST" && url.pathname === "/api/logo") return saveLogo(req, res, url.searchParams);
     if (req.method === "GET" && url.pathname === "/api/file") return sendFile(res, url.searchParams.get("path"));
     if (req.method === "GET" && url.pathname.startsWith("/f/")) return viewFile(res, url.pathname);
@@ -490,6 +535,8 @@ const server = http.createServer(async (req, res) => {
 
 // Tracks made before every track got its own chat get one now (2 Nov 2026).
 for (const p of loadAll()) if (p.tracks.some((t) => !p.sessions.some((s) => s.track === t.id))) try { update(p.id, (x) => ensureChats(x)); } catch {}
+// Sales and the clients: synced with the other person's Desk every minute (lib/sync.mjs).
+sync.start(() => { msgCache.clear(); broadcast({ type: "state" }); broadcast({ type: "leads" }); });
 server.listen(PORT, "127.0.0.1", () => {
   // Replies that were running when the server last stopped carry on: pick them up again.
   const n = runner.resume((m) => { if (m.sid) streaming.set(m.sid, ""); return handler(m.project, m.sid, false); });

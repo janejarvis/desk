@@ -562,3 +562,52 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 .np-pick{display:flex;gap:8px;align-items:center}.np-pick input{flex:1;min-width:0}
+
+/* ---- Sales and Clients (2 Nov 2026): separate sidebar areas, shared with the partner ---- */
+.rsep{height:1px;background:var(--hair);margin:8px 6px 2px}
+.rshared{float:right;letter-spacing:0;text-transform:none;color:var(--accent);font-weight:500}
+.brand .ver{margin-left:auto;font:500 11px/1 var(--font);color:var(--ink-3);background:var(--soft);padding:4px 7px;border-radius:6px}
+.brand .ver:empty{display:none}
+.syncerr{color:var(--warn)}
+@media (min-width:901px){.rail:not(:hover):not(:has(:focus-visible)) :is(.brand .ver,.rshared){display:none}.rail:not(:hover):not(:has(:focus-visible)) .rsep{margin:6px 4px}}
+.rofoot{padding:12px 14px;border-top:1px solid var(--hair);font-size:12.5px;color:var(--ink-3);text-align:center}
+.composer .mic.on{background:var(--bad);border-color:var(--bad);color:#fff}
+.composer .mic.busy{opacity:.55;pointer-events:none}
+/* Leads */
+.tools{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.lsplit{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-items:start}
+.lsplit.open{grid-template-columns:minmax(0,1fr) 340px}
+.lscroll{overflow-x:auto;padding-bottom:6px}
+.cols.leads{min-width:1500px;gap:10px}
+.lcount{color:var(--ink-3);font-weight:500;margin-left:4px}
+.col.lost h3,.col.blocked h3{color:var(--bad)}
+.card.picked{box-shadow:0 0 0 2px var(--accent)}
+.drop.over{background:var(--accent-soft);border-radius:12px}
+.lmore{display:block;margin:4px auto 0}
+.lnote{margin-top:6px}
+.pill.src-ob{background:var(--accent-soft);color:var(--accent)}
+.pill.src-in{background:var(--good-soft);color:var(--good)}
+.pill.late{background:var(--warn-soft);color:var(--warn)}
+.ldetail{position:sticky;top:0;gap:10px;max-height:calc(100vh - 170px);overflow:auto}
+.ldh{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.lkv{display:grid;grid-template-columns:62px 1fr;gap:6px 10px;font-size:12.5px;align-items:center}
+.lkv span{color:var(--ink-3)}.lkv b{font-weight:500;min-width:0;overflow-wrap:anywhere}.lkv a{color:var(--accent);text-decoration:none}
+.lsel{font:inherit;font-size:12.5px;border:1px solid var(--hair);border-radius:8px;background:var(--glass-2);padding:3px 6px;color:var(--ink)}
+.lsv,.lask{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12.5px}.lsv span,.lask span{color:var(--ink-3);width:62px}
+.lsv .chip,.lask .chip{height:26px;font-size:12px;padding:0 10px}
+.lnext,.lnote{display:flex;gap:6px}.lnext input,.lnote input{flex:1;min-width:0;height:32px;border:1px solid var(--hair);border-radius:9px;background:var(--glass-2);padding:0 9px;font:inherit;font-size:12.5px}
+.lnext input[type=date]{flex:0 0 130px}
+.lfile{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;background:var(--soft);border-radius:10px;padding:8px 10px;color:var(--ink);text-decoration:none}.lfile span{color:var(--good);font-weight:500;white-space:nowrap}
+.lmails summary{cursor:pointer;font-size:12.5px;color:var(--ink-2)}
+.lmail{margin:6px 0 0 8px}.lmail summary{display:flex;justify-content:space-between;gap:8px}.lmail summary span{color:var(--ink-3);white-space:nowrap}
+.lmail pre{white-space:pre-wrap;font:12px/1.5 var(--font);background:var(--soft);border-radius:8px;padding:8px 10px;margin:6px 0 0;color:var(--ink-2)}
+.ltl{font-size:12.5px}.lwhen{color:var(--ink-3);margin-right:4px}
+/* Numbers */
+.ntiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;margin-bottom:16px}
+.ntile{position:relative}.nl{color:var(--ink-2);font-size:12px}.nv{font-size:26px;font-weight:600;letter-spacing:-.02em;margin:4px 0 2px}
+.nrm{position:absolute;top:10px;right:12px;opacity:0}.ntile:hover .nrm{opacity:1}
+.ntable table{width:100%;border-collapse:collapse;margin-top:6px}.ntable th,.ntable td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--hair);font-size:13px}.ntable th{color:var(--ink-2);font-weight:500;font-size:12px}
+.ntwo{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin:0 0 14px}
+.nform{margin-top:6px}
+.banner-note{background:var(--warn-soft);color:var(--warn);border-radius:12px;padding:10px 14px;font-size:13px;margin-bottom:14px}
+.ltl li.hist .s{border-color:var(--ink-3);background:var(--soft)}

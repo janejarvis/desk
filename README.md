@@ -60,3 +60,16 @@ the hook to ~/.claude/settings.json. Closing the window keeps it running; quit f
 - Not code-signed: the first open on a Mac needs right-click › Open (or System Settings › Privacy &
   Security › Open Anyway); Windows shows "More info › Run anyway".
 - Updates: the app checks the repo in package.json `deskRepo` for a newer release and offers the download.
+
+## Sales and Clients (shared with João)
+
+- The sidebar has three areas: Projects (only on this computer), Sales and Clients (shared). Shared
+  data lives in a private repo, github.com/janejarvis/blendd-desk-data, cloned to the shared folder
+  (Diogo: ~/Projects/blendd-desk-shared; the app: <data folder>/shared) and synced every minute.
+- Sales: Leads (every stage and source, a lead's details, audits and emails), Outreach (the old
+  Oversight's outreach as it left it on 2 Nov; sending is paused), Numbers, Chats, Files (the audits).
+  `node bin/import-oversight.mjs` brings the leads in again from the old Oversight if needed.
+- Numbers tab on every project and client: `desk metric set <name> <value>` (sessions keep it current).
+- Voice: hold the mic in a chat box, speak, let go; the local whisper server turns it into text
+  (needs ffmpeg and whisper-server on 127.0.0.1:8766; no mic button without them).
+- Tests of shared things: DESK_SHARED=<copy of the shared folder> DESK_SYNC=off.
