@@ -432,6 +432,8 @@ const routes = {
   "POST /api/lead": (b) => { const l = b.op === "add" ? leadsDb.add(b) : leadsDb.set(b.id, b); broadcast({ type: "leads" }); return l; },
   // ---- voice: speech to text on this computer (the local whisper server) ----
   "GET /api/voice": () => ({ ok: VOICE.ok }),
+  // Connect: sync now, letting GitHub's sign-in window open (the first time on a computer).
+  "POST /api/sync": async () => { const s = await sync.syncNow({ interactive: true }); broadcast({ type: "state" }); broadcast({ type: "leads" }); return s; },
   // The one Desk window the STEER gadget drives: the last one focused, whatever browser it's in.
   "POST /api/steer": (b) => { steerOwner = String(b.id || "").slice(0, 40) || steerOwner; broadcast({ type: "steer", owner: steerOwner }); return { owner: steerOwner }; },
   "GET /api/steer": () => ({ owner: steerOwner }),

@@ -192,7 +192,7 @@ function render() {
 const kindOf = (p) => p.kind || "project";
 function railItem(p, unread) {
   const cur = S.view === p.id;
-  let h = `<button class="ritem" aria-current="${cur}" data-go="${p.id}" title="${esc(p.name)}"><span class="pav${unread(p.sessions) ? " unread" : ""}${p.logo ? " logo" : ""}" style="background:${p.color}">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : esc(p.kind === "sales" ? "€" : p.name[0])}</span><span class="nm">${esc(p.name)}</span><span class="live">${p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;
+  let h = `<button class="ritem" aria-current="${cur}" data-go="${p.id}" title="${esc(p.name)}"><span class="pav${unread(p.sessions) ? " unread" : ""}${p.logo ? " logo" : ""}" style="background:${p.color}">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : esc(p.kind === "sales" ? "€" : p.name[0])}</span><span class="nm">${esc(p.name)}</span><span class="live">${p.kind === "sales" ? "" : p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;
   if (cur && p.tracks.length > 1) h += `<div class="subtracks">${p.tracks.map((t) => `<button data-track="${t.id}" aria-current="${S.track === t.id}"><span>${esc(t.name)}</span><span class="live">${p.sessions.filter((s) => s.track === t.id).map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`).join("")}</div>`;
   return h;
 }
@@ -202,7 +202,7 @@ function renderRail() {
   const r = $("rail");
   const unread = (ss) => ss.some((s) => stateOf(s) === "waiting");
   const newBtn = (kind, label) => `<button class="ritem newproj" data-new="${kind}" title="${label}"><span class="pav plus">+</span><span class="nm">${label}</span></button>`;
-  const shared = D.sync?.shared || P().some((p) => p.shared);
+  const shared = D.sync?.shared || P().some((p) => p.shared) || D.sync?.ok === false;
   let h = `<div class="rail-label">Projects</div>` + P().filter((p) => kindOf(p) === "project").map((p) => railItem(p, unread)).join("") + newBtn("project", "New project");
   if (shared) {
     const sales = P().filter((p) => kindOf(p) === "sales");
@@ -213,9 +213,10 @@ function renderRail() {
   const all = P().flatMap((p) => p.sessions);
   const nbtn = "Notification" in window && Notification.permission === "default" ? `<button class="linkbtn" id="notifyon">Turn on notifications</button><br>` : "";
   const sy = D.sync || {}, other = ME === "Diogo" ? "João" : "Diogo";
-  const syncLine = !shared ? "" : sy.ok === false ? `<br><span class="syncerr" title="${esc(sy.error || "")}">Sales and Clients aren't syncing: ${esc((sy.error || "").slice(0, 90))}</span>` : sy.at ? `<br>Sales and Clients synced with ${other} · ${esc(clock(sy.at))}` : `<br>Syncing Sales and Clients…`;
+  const syncLine = !shared ? "" : sy.ok === false ? `<br><span class="syncerr">${esc(sy.error || "Sales and Clients aren't syncing.")}</span><br><button class="linkbtn" id="syncnow">Connect</button>` : sy.at ? `<br>Sales and Clients synced with ${other} · ${esc(clock(sy.at))}` : `<br>Syncing Sales and Clients…`;
   $("railfoot").innerHTML = nbtn + `<b>${fmt(new Date().toISOString())}</b><br>${all.filter((s) => stateOf(s) === "working").length} working · ${all.filter((s) => stateOf(s) === "waiting").length} new replies` + syncLine;
   $("notifyon")?.addEventListener("click", () => Notification.requestPermission().then(() => render()));
+  $("syncnow")?.addEventListener("click", async (e) => { e.target.textContent = "Connecting… (a GitHub sign-in window may open)"; e.target.disabled = true; try { await api("/api/sync", {}); } catch {} refresh(); });
   r.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { if (S.view !== b.dataset.go) { S.view = b.dataset.go; S.track = "all"; S.sheet = false; S.filter = "all"; S.msForm = null; S.lead = null; if (proj()?.kind === "sales") S.tab = "leads"; else if (["leads", "outreach"].includes(S.tab)) S.tab = "chats"; } render(); }));
   r.querySelectorAll("[data-track]").forEach((b) => (b.onclick = () => { S.track = S.track === b.dataset.track ? "all" : b.dataset.track; S.msForm = null; render(); }));
   r.querySelectorAll("[data-new]").forEach((b) => (b.onclick = () => newProject(b.dataset.new)));
@@ -223,7 +224,7 @@ function renderRail() {
 
 // Sales has its own tabs; every project and client gets a Numbers tab (Diogo, 2 Nov 2026).
 const PTABS = [["chats", "Chats"], ["roadmap", "Roadmap"], ["board", "Board"], ["numbers", "Numbers"], ["meetings", "Meetings"], ["files", "Files"]];
-const SALES_TABS = [["leads", "Leads"], ["outreach", "Outreach"], ["numbers", "Numbers"], ["chats", "Chats"], ["files", "Files"]];
+const SALES_TABS = [["leads", "Leads"], ["outreach", "Outreach"], ["numbers", "Numbers"], ["files", "Files"]]; // no Chats (Diogo, 2 Nov 2026)
 function renderMain() {
   const p = proj();
   const tabs = p?.kind === "sales" ? SALES_TABS : p ? PTABS : PTABS.filter(([k]) => k !== "numbers");
