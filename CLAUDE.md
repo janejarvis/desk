@@ -29,3 +29,8 @@ sessions and meetings. Push back on anything more.
   it (`owner`); the other person reads it (its transcript is mirrored into the shared folder) but can't
   write to it. Leads are one file each in SHARED/sales/leads (lib/leads.mjs); every project and client
   has a Numbers tab fed by `desk metric`.
+- Outreach is not part of the Desk (Diogo, 2 Nov 2026: "I don't want desk to become a huge project").
+  It runs on Diogo's Mac only (always on): ~/Projects/outreach-bridge, the old Oversight's outreach
+  code on its own, launchd pt.blendd.outreach-bridge. The Desk only shows it (Sales › Outreach) and
+  its lead moves (marked desk: true) are sent back so outreach stops writing to those leads. Later
+  it becomes a small separate service; never build sending, finding or audits into the Desk.
