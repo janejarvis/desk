@@ -105,6 +105,7 @@ async function startDesk() {
     server.desk.notify = (title, body) => { const n = new Notification({ title, body }); n.on("click", () => showWindow()); n.show(); };
     server.desk.thumbnail = (file) => nativeImage.createThumbnailFromPath(file, { width: 600, height: 600 }).then((img) => img.toPNG());
     server.desk.restart = () => { app.relaunch(); quitting = true; app.exit(0); };
+    server.desk.pickFolder = async () => { const r = await dialog.showOpenDialog(win, { title: "Pick the project's folder", properties: ["openDirectory", "createDirectory"] }); return r.canceled ? null : r.filePaths[0]; };
   }
   for (let i = 0; i < 50; i++) { try { const r = await fetch(URL_ + "/api/state"); if (r.ok) break; } catch {} await new Promise((r) => setTimeout(r, 100)); }
   win.loadURL(URL_);

@@ -15,7 +15,7 @@ import { docxText } from "./lib/docx.mjs";
 
 // What the installed app (app/main.cjs) does better than plain macOS tools, on every computer:
 // notifications and file previews. Left empty, the Mac's own tools are used.
-export const desk = { notify: null, thumbnail: null, restart: null };
+export const desk = { notify: null, thumbnail: null, restart: null, pickFolder: null };
 const MAC = process.platform === "darwin", WIN = process.platform === "win32";
 import { artifactsIn, readFrom } from "./lib/files.mjs";
 import * as runner from "./lib/runner.mjs";
@@ -392,6 +392,13 @@ const routes = {
   },
   "POST /api/fileopen": (b) => { const f = fileOf(b.project, b.id); execFileSync("open", b.finder ? ["-R", f.path] : [f.path]); return { ok: true }; },
   "POST /api/project": (b) => createProject(b),
+  // The system's own folder picker (the app's, or the Mac's when the Desk runs in a browser).
+  "POST /api/pick-folder": async () => {
+    if (desk.pickFolder) return { folder: await desk.pickFolder() };
+    if (!MAC) return { folder: null, why: "Type the folder instead." };
+    try { return { folder: execFileSync("osascript", ["-e", 'POSIX path of (choose folder with prompt "Pick the project\'s folder")'], { encoding: "utf8", timeout: 300000 }).trim().replace(/\/$/, "") }; }
+    catch { return { folder: null }; }
+  },
   "POST /api/briefopen": (b) => { execFileSync("open", [expand(ensureBrief(load(b.project)))]); return { ok: true }; },
   "GET /api/brief": (q) => { const p = load(q.get("project")); const path = expand(ensureBrief(p)); return { path: tilde(path), text: existsSync(path) ? readFileSync(path, "utf8").slice(0, 200000) : "" }; },
   "POST /api/shell": (b) => shell(b.project, b.session, b.cmd),

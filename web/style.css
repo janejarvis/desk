@@ -561,3 +561,4 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
   .proto{left:16px;right:16px;text-align:center}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.np-pick{display:flex;gap:8px;align-items:center}.np-pick input{flex:1;min-width:0}

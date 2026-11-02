@@ -1,7 +1,7 @@
 {
   "name": "desk",
   "productName": "Desk",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Projects, roadmaps, boards and Claude chats in one place.",
   "main": "app/main.cjs",

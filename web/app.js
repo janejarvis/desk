@@ -639,7 +639,7 @@ function newProject() {
     <div class="vhead"><div class="vt"><b>New project or client</b><span>It gets its own roadmap, board, meetings, files, sessions and a brief.</span></div><button type="button" class="x" id="vclose" aria-label="Close">×</button></div>
     <div class="npbody">
       <label for="np-name">Name<input id="np-name" required maxlength="40" placeholder="e.g. Crumb and Co" autocomplete="off"></label>
-      <label for="np-folder">Folder on this computer<input id="np-folder" required placeholder="~/Projects/crumb-and-co" autocomplete="off"><small>Where its work lives; sessions start here. It must already exist.</small></label>
+      <label for="np-folder">Folder on this computer<span class="np-pick"><input id="np-folder" required placeholder="~/Projects/crumb-and-co" autocomplete="off"><button type="button" class="btn" id="np-choose">Choose…</button></span><small>Where its work lives; sessions start here. If it doesn't exist yet, it's created.</small></label>
       <label for="np-tracks">Tracks<input id="np-tracks" placeholder="e.g. Website, Ads, Social" autocomplete="off"><small>Comma-separated. Leave empty for one track; you can add and rename them later.</small></label>
       <div class="nprow"><span class="lbl">Colour</span><span class="swatches">${SWATCHES.map((c, i) => `<button type="button" class="sw-pick" data-c="${c}" aria-pressed="${i === 0}" style="background:${c}" aria-label="Colour ${c}"></button>`).join("")}</span></div>
       <label for="np-logo">Logo (optional)<input type="file" id="np-logo" accept="image/png,image/jpeg,image/svg+xml,image/webp"></label>
@@ -651,6 +651,7 @@ function newProject() {
   $("vclose").onclick = close; $("np-cancel").onclick = close; v.onclick = (e) => { if (e.target === v) close(); };
   $("np-name").oninput = () => { const f = $("np-folder"); if (!f.dataset.touched) f.value = "~/Projects/" + $("np-name").value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""); };
   $("np-folder").oninput = () => { $("np-folder").dataset.touched = "1"; };
+  $("np-choose").onclick = async () => { try { const r = await api("/api/pick-folder", {}); if (r.folder) { $("np-folder").value = r.folder; $("np-folder").dataset.touched = "1"; } else if (r.why) toast(r.why); } catch (err) { toast(err.message, true); } };
   $("np-name").focus();
   $("npform").onsubmit = async (e) => {
     e.preventDefault(); $("np-go").disabled = true;
