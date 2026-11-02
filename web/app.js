@@ -215,7 +215,9 @@ function renderRail() {
   const all = P().flatMap((p) => p.sessions);
   const nbtn = "Notification" in window && Notification.permission === "default" ? `<button class="linkbtn" id="notifyon">Turn on notifications</button><br>` : "";
   const sy = D.sync || {}, other = ME === "Diogo" ? "João" : "Diogo";
-  const syncLine = !shared ? "" : sy.ok === false ? `<br><span class="syncerr">${esc(sy.error || "Sales and Clients aren't syncing.")}</span><br><input class="ghuser" id="ghuser" placeholder="Your GitHub username" value="${esc(sy.github || "")}"><button class="linkbtn" id="syncnow">Connect</button>` : sy.at ? `<br>Sales and Clients synced with ${other} · ${esc(clock(sy.at))}` : `<br>Syncing Sales and Clients…`;
+  // Until the first sync works, the username box and Connect are always there (2 Nov 2026: João only saw "Syncing…").
+  const connect = `<br><input class="ghuser" id="ghuser" placeholder="Your GitHub username" value="${esc(sy.github || "")}"><button class="linkbtn" id="syncnow">Connect</button>`;
+  const syncLine = !shared ? "" : sy.ok === true ? `<br>Sales and Clients synced with ${other} · ${esc(clock(sy.at))}` : sy.ok === false ? `<br><span class="syncerr">${esc(sy.error || "Sales and Clients aren't syncing.")}</span>` + connect : `<br>${sy.busy ? "Syncing Sales and Clients…" : "Sales and Clients aren't connected yet."}` + connect;
   $("railfoot").innerHTML = nbtn + `<b>${fmt(new Date().toISOString())}</b><br>${all.filter((s) => stateOf(s) === "working").length} working · ${all.filter((s) => stateOf(s) === "waiting").length} new replies` + syncLine;
   $("notifyon")?.addEventListener("click", () => Notification.requestPermission().then(() => render()));
   $("syncnow")?.addEventListener("click", async (e) => { const github = $("ghuser")?.value.trim(); if (!github) return toast("Type your GitHub username first (the account that accepted the invite).", true); e.target.textContent = "Connecting… (a GitHub sign-in window may open)"; e.target.disabled = true; try { await api("/api/sync", { github }); } catch {} refresh(); });
