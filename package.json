@@ -5,7 +5,7 @@
   "private": true,
   "description": "Projects, roadmaps, boards and Claude chats in one place.",
   "main": "app/main.cjs",
-  "deskRepo": "",
+  "deskRepo": "janejarvis/desk",
   "scripts": {
     "app": "electron .",
     "dist:mac": "electron-builder --mac",
