@@ -42,13 +42,14 @@ for (const o of crm) {
     optedOut: (o.timeline || []).some((t) => /\bremov|opted out|não quero|unsubscribe/i.test(t.text || "")),
     importedAt: new Date().toISOString(), fromOversight: o.id,
   };
-  // What was done on the Desk is never undone by a refresh: its history entries (they carry "by") are
+  // What was done on the Desk is never undone by a refresh: its history entries (marked desk: true) are
   // kept, and a stage, owner or next step set on the Desk after Oversight's last change wins.
-  const was = have.get(id), desk = (was?.timeline || []).filter((t) => t.by);
+  const was = have.get(id), desk = (was?.timeline || []).filter((t) => t.desk);
   if (was && desk.length) {
     l.timeline = [...(o.timeline || []), ...desk].sort((a, b) => (a.at || "").localeCompare(b.at || ""));
     const last = (k) => desk.filter((t) => t.kind === k).map((t) => t.at).sort().pop() || "";
-    if (last("stage") > (o.stageAt || "")) Object.assign(l, { stage: was.stage, stageAt: was.stageAt, lost: was.lost, notLead: was.notLead });
+    const ovStage = (o.timeline || []).filter((t) => t.kind === "stage").pop();   // "desk": the bridge copied a Desk move there
+    if (last("stage") > (o.stageAt || "") || ovStage?.by === "desk") Object.assign(l, { stage: was.stage, stageAt: was.stageAt, lost: was.lost, notLead: was.notLead });
     if (last("owner")) l.owner = was.owner;
     if (last("next") > (o.next?.set || "")) l.next = was.next;
     if (was.services?.length && !(o.services || []).length) l.services = was.services;
