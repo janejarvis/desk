@@ -1,7 +1,7 @@
 {
   "name": "desk",
   "productName": "Desk",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "description": "Projects, roadmaps, boards and Claude chats in one place.",
   "main": "app/main.cjs",
@@ -68,6 +68,16 @@
       "perMachine": false,
       "shortcutName": "Desk",
       "runAfterFinish": true
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "janejarvis",
+        "repo": "desk"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
   }
 }
