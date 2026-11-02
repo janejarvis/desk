@@ -42,9 +42,17 @@ for (const o of crm) {
     optedOut: (o.timeline || []).some((t) => /\bremov|opted out|não quero|unsubscribe/i.test(t.text || "")),
     importedAt: new Date().toISOString(), fromOversight: o.id,
   };
-  // A lead already changed on the Desk keeps its stage, owner, next step and anything added since.
-  const was = have.get(id);
-  if (was && was.importedAt && (was.timeline || []).length > (o.timeline || []).length) Object.assign(l, { stage: was.stage, stageAt: was.stageAt, owner: was.owner, next: was.next, timeline: was.timeline, lost: was.lost, notLead: was.notLead });
+  // What was done on the Desk is never undone by a refresh: its history entries (they carry "by") are
+  // kept, and a stage, owner or next step set on the Desk after Oversight's last change wins.
+  const was = have.get(id), desk = (was?.timeline || []).filter((t) => t.by);
+  if (was && desk.length) {
+    l.timeline = [...(o.timeline || []), ...desk].sort((a, b) => (a.at || "").localeCompare(b.at || ""));
+    const last = (k) => desk.filter((t) => t.kind === k).map((t) => t.at).sort().pop() || "";
+    if (last("stage") > (o.stageAt || "")) Object.assign(l, { stage: was.stage, stageAt: was.stageAt, lost: was.lost, notLead: was.notLead });
+    if (last("owner")) l.owner = was.owner;
+    if (last("next") > (o.next?.set || "")) l.next = was.next;
+    if (was.services?.length && !(o.services || []).length) l.services = was.services;
+  }
   leads.put(l); n++;
 }
 
@@ -53,7 +61,7 @@ const client = json(join(C, "client.json"), {});
 const ob = mails.filter((m) => m.state !== "draft");
 const byDay = {}; for (const m of ob.filter((m) => m.state === "sent")) { const d = (m.created || "").slice(0, 10); byDay[d] = (byDay[d] || 0) + 1; }
 const snap = {
-  at: new Date().toISOString(), from: "old Oversight (off since 2 Nov 2026)",
+  at: new Date().toISOString(), from: "the outreach bridge (the old Oversight's outreach code, run on its own)",
   sent: ob.filter((m) => m.state === "sent").length, waiting: ob.filter((m) => m.state === "waiting").length, held: ob.filter((m) => m.state === "held").length, stopped: ob.filter((m) => m.state === "stopped").length,
   firstSent: Object.keys(byDay).sort()[0] || null, byDay,
   inboxes: (client.outbound?.inboxes || []).map((i) => ({ address: i.address, dailyCap: i.dailyCap || null, rampStart: i.rampStart || null })),

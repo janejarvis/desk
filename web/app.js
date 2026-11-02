@@ -1143,7 +1143,9 @@ function renderOutreach() {
   const rep = ob.filter(replied), out = ob.filter((l) => l.optedOut);
   const next = ob.filter((l) => l.next?.due && !["won", "lost", "notlead"].includes(l.stage)).sort((a, b) => a.next.due.localeCompare(b.next.due)).slice(0, 12);
   const trades = {}; for (const l of ob) { const t = (trades[l.source?.trade || "other"] ||= [l.source?.trade || "other", 0, 0, 0]); t[1]++; if (l.stage !== "new") t[2]++; if (replied(l)) t[3]++; }
-  let h = o.from ? `<div class="banner-note">Sending is paused: the outreach ran in the old Oversight, which is off since 2 Nov. These are its numbers as it left them (${esc(clock(o.at))}); new replies and moves are made here.</div>` : "";
+  // Kept current every 10 minutes by the outreach bridge on Diogo's Mac; a stale snapshot means it stopped.
+  const stale = !o.at || Date.now() - Date.parse(o.at) > 3 * 3600e3;
+  let h = stale ? `<div class="banner-note">The outreach hasn't reported since ${esc(o.at ? clock(o.at) : "—")}. It runs on Diogo's Mac (the outreach bridge): check that the Mac is on.</div>` : "";
   h += `<div class="ntiles">${ntile("Sent in the last 7 days", since(7), `${o.sent ?? 0} since ${o.firstSent ? clock(o.firstSent) : "the start"}`)}${ntile("Waiting for a yes", o.waiting ?? 0, `${o.held ?? 0} held back by the guards`)}${ntile("Replied", rep.length, rep.map((l) => l.company).slice(0, 3).join(", "))}${ntile("Opted out", out.length, "never written to again")}</div>`;
   h += `<div class="ntwo">${ntable("Next follow-ups", ["Lead", "Trade", "Next step", "When"], next.map((l) => [l.company, l.source?.trade || "", l.next.text, l.next.due.split("-").reverse().join("/")]))}${ntable("Trades so far", ["Trade", "Found", "Emailed", "Replied"], Object.values(trades).sort((a, b) => b[1] - a[1]))}</div>`;
   h += ntable("Sending inboxes", ["Inbox", "Daily limit", "Started"], (o.inboxes || []).map((i) => [i.address, i.dailyCap ? `up to ${i.dailyCap} a day` : "—", i.rampStart ? clock(i.rampStart) : "—"]));
