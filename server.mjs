@@ -8,8 +8,8 @@ import { tmpdir, homedir } from "node:os";
 const HOME_DIR = homedir();
 import { join, extname, dirname, basename } from "node:path";
 import { randomUUID } from "node:crypto";
-import { ROOT, DESK_HOME, ME, DATA, expand, tilde, load, loadAll } from "./lib/store.mjs";
-import { run, createProject, ensureBrief } from "./lib/ops.mjs";
+import { ROOT, DESK_HOME, ME, DATA, expand, tilde, load, loadAll, update } from "./lib/store.mjs";
+import { run, createProject, ensureBrief, ensureChats } from "./lib/ops.mjs";
 import { messages, lastWrite, live, agents, transcriptPath } from "./lib/sessions.mjs";
 import { docxText } from "./lib/docx.mjs";
 
@@ -488,6 +488,8 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+// Tracks made before every track got its own chat get one now (2 Nov 2026).
+for (const p of loadAll()) if (p.tracks.some((t) => !p.sessions.some((s) => s.track === t.id))) try { update(p.id, (x) => ensureChats(x)); } catch {}
 server.listen(PORT, "127.0.0.1", () => {
   // Replies that were running when the server last stopped carry on: pick them up again.
   const n = runner.resume((m) => { if (m.sid) streaming.set(m.sid, ""); return handler(m.project, m.sid, false); });

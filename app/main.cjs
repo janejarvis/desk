@@ -158,7 +158,7 @@ ipcMain.handle("finish", async (_e, name) => {
 // ---- updates ----
 // Windows: a newer release is downloaded in the background, then he's asked to restart into it
 // (Diogo, 2 Nov 2026: "he gets prompted for updating whenever there's an update"). Checked at start
-// and every 2 hours. A Mac app must be code-signed to update itself, so on the Mac the Desk says a
+// and every 30 minutes. A Mac app must be code-signed to update itself, so on the Mac the Desk says a
 // new version is out and opens its download page.
 let updater = null;
 try { updater = require("electron-updater").autoUpdater; } catch {}
@@ -167,13 +167,14 @@ function setupUpdates() {
   if (!updater || MAC || SANDBOX || !app.isPackaged) return;
   updater.autoDownload = true; updater.autoInstallOnAppQuit = true;
   updater.logger = { info: (m) => console.log("update: " + m), warn: (m) => console.warn("update: " + m), error: (m) => console.error("update: " + m), debug: () => {} };
+  updater.on("update-available", (info) => { try { new Notification({ title: "Desk update", body: `Desk ${info.version} is downloading. You'll be asked to restart when it's ready.` }).show(); } catch {} });
   updater.on("update-downloaded", async (info) => {
     if (updatePrompted) return; updatePrompted = true;
     const { response } = await dialog.showMessageBox(win, { type: "info", buttons: ["Restart now", "Later"], defaultId: 0, cancelId: 1, message: `Desk ${info.version} is ready`, detail: "Restart to use the new version. Your projects and chats stay. Replies in progress carry on. If you choose Later, it installs the next time the Desk closes." });
     if (response === 0) { quitting = true; updater.quitAndInstall(true, true); } else updatePrompted = false;
   });
   const check = () => updater.checkForUpdates().catch((e) => console.error("update check: " + e.message));
-  setTimeout(check, 10000); setInterval(check, 2 * 3600e3);
+  setTimeout(check, 10000); setInterval(check, 30 * 60e3);
 }
 async function checkUpdates(manual) {
   if (updater && !MAC && app.isPackaged && !SANDBOX) {
