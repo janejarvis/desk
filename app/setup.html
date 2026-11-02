@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Set up the Desk</title>
+<style>
+  :root { --ink:#1d1d1f; --ink-2:#6e6e73; --ink-3:#a1a1a6; --bg:#f5f5f7; --card:#fff; --hair:rgba(0,0,0,.08); --accent:#0071e3; --good:#1a7f37; --warn:#b25000; }
+  @media (prefers-color-scheme: dark) { :root { --ink:#f5f5f7; --ink-2:#a1a1a6; --ink-3:#6e6e73; --bg:#1c1c1e; --card:#2c2c2e; --hair:rgba(255,255,255,.1); --accent:#2997ff; --good:#3fb950; --warn:#f0883e; } }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--ink); font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; padding: 24px 16px; }
+  main { width: 100%; max-width: 520px; }
+  .mark { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; background: #1d1d1f; color: #fff; font: 600 30px/1 Georgia, serif; padding-bottom: 3px; margin-bottom: 14px; }
+  h1 { font-size: 24px; letter-spacing: -.02em; margin: 0 0 4px; }
+  .lead { color: var(--ink-2); margin: 0 0 22px; }
+  ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  li { background: var(--card); border: 1px solid var(--hair); border-radius: 14px; padding: 14px 16px; display: grid; grid-template-columns: 26px 1fr; gap: 4px 12px; align-items: start; }
+  li.off { opacity: .45; }
+  .n { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--hair); font-weight: 600; font-size: 13px; }
+  li.done .n { background: var(--good); color: #fff; }
+  h2 { font-size: 15px; margin: 2px 0 0; }
+  .body { grid-column: 2; color: var(--ink-2); }
+  .ok { color: var(--good); }
+  .warn { color: var(--warn); }
+  input { width: 100%; height: 38px; border-radius: 10px; border: 1px solid var(--hair); background: var(--bg); color: var(--ink); padding: 0 12px; font: inherit; margin-top: 6px; }
+  button { margin-top: 10px; height: 36px; padding: 0 16px; border-radius: 999px; border: 0; background: var(--accent); color: #fff; font: 600 14px/1 inherit; cursor: pointer; font-family: inherit; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: transparent; color: var(--accent); padding: 0 4px; }
+  pre { grid-column: 1 / -1; margin: 8px 0 0; max-height: 140px; overflow: auto; background: var(--bg); border-radius: 8px; padding: 8px 10px; font: 11.5px/1.45 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; color: var(--ink-2); }
+  pre:empty { display: none; }
+  .finish { margin-top: 18px; width: 100%; height: 42px; font-size: 15px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mark">D</div>
+  <h1>Set up your Desk</h1>
+  <p class="lead">Your projects, roadmaps, boards and Claude chats, in one place on this computer. Three short steps.</p>
+  <ol>
+    <li id="s-name"><span class="n">1</span><h2>Your name</h2>
+      <div class="body">Claude uses it when a to-do is waiting on you.<input id="name" placeholder="First name" maxlength="40" autocomplete="given-name"></div></li>
+    <li id="s-git" hidden><span class="n">·</span><h2>Git for Windows</h2>
+      <div class="body"><span id="git-msg">Claude Code needs it on Windows.</span><br><button id="git-btn">Install Git</button></div><pre id="git-log"></pre></li>
+    <li id="s-claude"><span class="n">2</span><h2>Claude Code</h2>
+      <div class="body"><span id="claude-msg">Checking…</span><br><button id="claude-btn" hidden>Install Claude Code</button></div><pre id="claude-log"></pre></li>
+    <li id="s-auth"><span class="n">3</span><h2>Sign in to Claude</h2>
+      <div class="body"><span id="auth-msg">Use your Claude account (Pro or Max plan). Your browser opens to sign in.</span><br><button id="auth-btn">Sign in with Claude</button></div><pre id="auth-log"></pre></li>
+  </ol>
+  <button class="finish" id="finish" disabled>Open my Desk</button>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let st = null, busy = false, logTo = null;
+setup.onLog((t) => { if (logTo) { logTo.textContent += t; logTo.scrollTop = logTo.scrollHeight; } });
+// The sign-in prints a link too: if the browser didn't open, the person can click it.
+setup.onLog((t) => { const m = t.match(/https:\/\/\S+/); if (m && logTo === $("auth-log")) { $("auth-msg").innerHTML = 'Finish signing in in your browser. If it didn\'t open, <button class="ghost" id="auth-link">open the sign-in page</button>.'; $("auth-link").onclick = () => setup.openLink(m[0]); } });
+
+async function refresh() {
+  st = await setup.status();
+  if (st.name && !$("name").value) $("name").value = st.name;
+  const win = st.platform === "win32";
+  $("s-git").hidden = !win || st.git && !$("git-log").textContent;
+  if (win) { $("git-msg").innerHTML = st.git ? '<span class="ok">Installed.</span>' : "Claude Code needs it on Windows."; $("git-btn").hidden = st.git; $("s-git").classList.toggle("done", st.git); }
+  const hasClaude = !!st.claude;
+  $("claude-msg").innerHTML = hasClaude ? `<span class="ok">Installed</span> (${st.claude.version || "ready"}).` : "Not on this computer yet. It's Anthropic's official app; it installs in a minute.";
+  $("claude-btn").hidden = hasClaude; $("claude-btn").disabled = busy || (win && !st.git);
+  $("s-claude").classList.toggle("done", hasClaude);
+  const signed = !!st.auth?.loggedIn;
+  $("s-auth").classList.toggle("off", !hasClaude); $("s-auth").classList.toggle("done", signed);
+  $("auth-btn").hidden = signed; $("auth-btn").disabled = busy || !hasClaude;
+  if (signed) $("auth-msg").innerHTML = `<span class="ok">Signed in</span>${st.auth.email ? " as " + st.auth.email : ""}${st.auth.plan ? " · " + st.auth.plan[0].toUpperCase() + st.auth.plan.slice(1) + " plan" : ""}.`;
+  $("s-name").classList.toggle("done", !!$("name").value.trim());
+  $("finish").disabled = busy || !signed || !$("name").value.trim();
+}
+async function step(log, fn) { busy = true; logTo = $(log); logTo.textContent = ""; await refresh(); try { await fn(); } finally { busy = false; await refresh(); } }
+
+$("name").oninput = refresh;
+$("git-btn").onclick = () => step("git-log", async () => { const c = await setup.installGit(); if (c !== 0) $("git-msg").innerHTML = '<span class="warn">That didn\'t finish.</span> Install Git from <button class="ghost" id="git-link">git-scm.com</button>, then reopen the Desk.'; $("git-link") && ($("git-link").onclick = () => setup.openLink("https://git-scm.com/download/win")); });
+$("claude-btn").onclick = () => step("claude-log", async () => { const c = await setup.installClaude(); if (c !== 0) $("claude-msg").innerHTML = '<span class="warn">The install didn\'t finish.</span> See the messages below, or install it from <button class="ghost" id="cc-link">claude.com/claude-code</button>.'; $("cc-link") && ($("cc-link").onclick = () => setup.openLink("https://claude.com/claude-code")); });
+$("auth-btn").onclick = () => step("auth-log", async () => { const ok = await setup.signIn(); if (!ok) $("auth-msg").innerHTML = '<span class="warn">Not signed in yet.</span> Try again.'; });
+$("finish").onclick = async () => { busy = true; $("finish").textContent = "Opening…"; await refresh(); if (!(await setup.finish($("name").value))) { busy = false; $("finish").textContent = "Open my Desk"; refresh(); } };
+refresh();
+</script>
+</body>
+</html>

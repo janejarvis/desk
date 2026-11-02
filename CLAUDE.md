@@ -8,7 +8,8 @@ sessions and meetings. Push back on anything more.
 - The look is the ACE / Oversight V1 glass language (`~/PACE-projects/Oversight/looks/ace-glass.css`):
   white glass, system font, #1d1d1f ink, one blue accent, pill buttons. No counts of to-do / doing
   etc. anywhere but the board's own lanes (Diogo's ruling, 29 Oct 2026).
-- No npm packages: plain Node and plain browser JavaScript.
+- No npm packages: plain Node and plain browser JavaScript. (package.json is only for building the
+  installable app in app/ with Electron; the Desk itself never imports anything from node_modules.)
 - Every data change goes through `lib/ops.mjs`, so the page and the `desk` command follow the
   same rules.
 - Never test against the real sessions: use a copy of `data/projects`, an empty `DESK_RUN` folder and `test/fake-claude.mjs`

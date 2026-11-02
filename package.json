@@ -1,0 +1,73 @@
+{
+  "name": "desk",
+  "productName": "Desk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Projects, roadmaps, boards and Claude chats in one place.",
+  "main": "app/main.cjs",
+  "deskRepo": "",
+  "scripts": {
+    "app": "electron .",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "pt.blendd.desk",
+    "productName": "Desk",
+    "asar": false,
+    "directories": {
+      "output": "dist",
+      "buildResources": "app"
+    },
+    "files": [
+      "package.json",
+      "server.mjs",
+      "lib/**",
+      "bin/**",
+      "hooks/**",
+      "web/**",
+      "app/main.cjs",
+      "app/preload.cjs",
+      "app/setup.html",
+      "app/icon.png"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "icon": "app/icon-1024.png",
+      "category": "public.app-category.productivity",
+      "identity": null
+    },
+    "dmg": {
+      "title": "Desk"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "app/icon-1024.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "shortcutName": "Desk",
+      "runAfterFinish": true
+    }
+  }
+}

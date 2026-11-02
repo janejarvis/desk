@@ -43,3 +43,20 @@ and meeting transcripts. Runs on this Mac only (http://127.0.0.1:4848).
 - Steps a session wasn't allowed to take from the Desk (they need Diogo's OK) show in its pane, with
   "Run it myself (!)". Finished replies notify (browser notification; a Mac notification when no
   Desk page is open).
+
+## The app (for other people, Mac and Windows)
+
+`app/` wraps this same Desk as an installable app (Electron). It runs the server inside itself, keeps
+each person's data in their own folder (Mac: ~/Library/Application Support/Desk, Windows:
+%APPDATA%\Desk; `DESK_HOME`), and on first start asks their name (`config.json`), installs Claude Code
+if it's missing (Anthropic's installer) and signs them in to Claude (`claude auth login`). It writes
+`desk` and `desk-hook` launchers to ~/.local/bin (they run the scripts with the app as Node) and adds
+the hook to ~/.claude/settings.json. Closing the window keeps it running; quit from the menu (or tray).
+
+- Try it without touching a real Desk: `DESK_APP_SANDBOX=<empty folder> npm run app` (data, launchers
+  and hook settings go in that folder; port 4796).
+- Build a Mac .dmg here: `npm run dist:mac`. Both systems: push a tag (`git tag v1.0.1 && git push
+  origin v1.0.1`); GitHub Actions builds the .dmg and the Windows .exe and attaches them to a release.
+- Not code-signed: the first open on a Mac needs right-click › Open (or System Settings › Privacy &
+  Security › Open Anyway); Windows shows "More info › Run anyway".
+- Updates: the app checks the repo in package.json `deskRepo` for a newer release and offers the download.
