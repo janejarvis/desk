@@ -8,8 +8,19 @@ on:
 permissions:
   contents: write
 jobs:
+  # The release is made once, before the builds, so the two never race to create it.
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "Desk ${GITHUB_REF_NAME#v}" --notes "Mac with an Apple chip: Desk-…-arm64.dmg · Intel Mac: Desk-….dmg · Windows: Desk Setup ….exe"
   build:
+    needs: release
+    if: always() && needs.release.result != 'failure'
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
@@ -34,7 +45,6 @@ jobs:
         run: |
           shopt -s nullglob
           files=(dist/*.dmg dist/*.exe)
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "Desk ${GITHUB_REF_NAME#v}" --notes "Mac with an Apple chip: Desk-…-arm64.dmg · Intel Mac: Desk-….dmg · Windows: Desk Setup ….exe" || true
           gh release upload "$GITHUB_REF_NAME" "${files[@]}" --clobber
       - uses: actions/upload-artifact@v4
         with:
