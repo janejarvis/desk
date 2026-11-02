@@ -67,7 +67,8 @@
       "oneClick": true,
       "perMachine": false,
       "shortcutName": "Desk",
-      "runAfterFinish": true
+      "runAfterFinish": true,
+      "artifactName": "Desk-Setup-${version}.${ext}"
     },
     "publish": [
       {
