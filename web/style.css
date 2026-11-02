@@ -59,7 +59,11 @@ svg{width:16px;height:16px;flex:none}
 .rail-label{font:500 11px/1 var(--font);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);padding:14px 10px 6px}
 .ritem{display:flex;align-items:center;gap:10px;width:100%;border:0;background:transparent;border-radius:11px;padding:9px 10px;text-align:left;transition:background .15s}
 .ritem:hover{background:var(--soft)}
-.ritem[aria-current="true"]{background:var(--glass-2);box-shadow:var(--card)}
+.ritem{position:relative}
+.ritem[aria-current="true"]{background:var(--accent-soft);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 35%,transparent)}
+.ritem[aria-current="true"]::before{content:"";position:absolute;left:0;top:9px;bottom:9px;width:3px;border-radius:0 3px 3px 0;background:var(--accent)}
+.ritem[aria-current="true"] .nm{font-weight:650;color:var(--accent)}
+.ritem[aria-current="true"] .pav{box-shadow:0 0 0 2px var(--glass-2),0 0 0 4px var(--accent)}
 .ritem .nm{flex:1;min-width:0;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ct{font:500 12px/1 var(--mono);color:var(--ink-3);font-variant-numeric:tabular-nums}
 .ct.w{color:var(--warn)}
@@ -445,6 +449,7 @@ details.note div{padding-top:4px}
 .feed:empty{display:none}
 .workline .typing{margin-top:5px;flex:none}
 .workline .typing{padding:0}
+.bgjob .bgnote{display:block;font-size:11.5px;color:var(--ink-3);margin-top:2px}
 .tnote{font-size:11.5px;color:var(--ink-3);margin-top:2px}
 .composer .btn.stop{background:var(--bad);color:#fff}
 .fill{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:18px;border:1px dashed var(--hair);border-radius:var(--r-md);color:var(--ink-2);max-width:620px}

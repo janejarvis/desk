@@ -68,6 +68,9 @@ const P = () => D.projects;
 const proj = () => P().find((p) => p.id === S.view);
 const scopeP = () => (S.view === "all" ? P() : [proj()].filter(Boolean));
 const inTrack = (x) => S.view === "all" || S.track === "all" || x.track === S.track;
+// A whole conversation is shown (it never gets cut), so each reply is turned into HTML once and kept.
+const mdDone = new Map();
+const mdKept = (t) => { let h = mdDone.get(t); if (h === undefined) { h = md(t); mdDone.set(t, h); } return h; };
 const trName = (p, id) => p.tracks.find((t) => t.id === id)?.name || "";
 const findS = (id) => { for (const p of P()) { const s = p.sessions.find((x) => x.id === id); if (s) return { p, s }; } return null; };
 const allTodos = () => scopeP().flatMap((p) => p.todos.filter(inTrack).map((t) => ({ p, t })));
@@ -566,9 +569,11 @@ function renderChats() {
 function paneHTML({ p: sp, s }, key) {
   const label = `${sp.name} · ${trName(sp, s.track)}`; // shown on hover only: the pane header is just the session's name
   const st = stateOf(s), live = S.stream[s.id], msgs = S.msgs[s.id]?.list;
-  let body = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => `<div class="m ${m.who}">${m.who === "me" ? meText(m.text) : md(m.text)}${m.who === "claude" ? fileCards(sp, s, msgs, m) : ""}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
+  let body = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => `<div class="m ${m.who}">${m.who === "me" ? meText(m.text) : mdKept(m.text)}${m.who === "claude" ? fileCards(sp, s, msgs, m) : ""}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
   for (const [i, d] of (s.denied || []).entries()) body += `<div class="m denied"><div class="dh"><b>Not allowed from the Desk</b><span>${esc(d.tool)} · ${esc(clock(d.at))}</span></div><div class="dd">${esc(d.detail)}</div>${d.command ? `<code class="dc">${esc(d.command.length > 300 ? d.command.slice(0, 300) + "…" : d.command)}</code>` : ""}<div class="dx">Steps that need your OK are refused when sent from the Desk.${d.command ? " Run it yourself, or tell the session how to go on." : " Tell the session how to go on."}</div><div class="db">${d.command ? `<button type="button" class="btn small" data-runit="${esc(s.id)}|${i}">Run it myself (!)</button>` : ""}<button type="button" class="linkbtn" data-undeny="${esc(sp.id)}|${esc(s.id)}|${i}">Dismiss</button></div></div>`;
   for (const e of s.pendingShell || []) body += `<div class="m shell"><div class="sh-h"><code>$ ${esc(e.cmd)}</code><span>${e.state === "running" ? "running in Terminal…" : `exit ${e.code ?? "?"} · goes with your next message`}</span></div>${e.state === "done" ? `<pre>${esc(e.output || "(no output)")}</pre>` : ""}</div>`;
+  // A job the session left running past its reply (`desk wait`): it shows here until it ends, then the session reports.
+  if (!live?.active) for (const b of s.bg || []) body += `<div class="m claude streaming bgjob"><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">Working in the background · ${esc(b.what)} · since ${esc(clock(b.at))}</span></span><span class="bgnote">${esc(s.name)} will report here when it ends.</span></div>`;
   if (live?.active) body += `<div class="m claude streaming" data-live="${esc(s.id)}"><span class="tx">${md(unsaid(live.text, msgs))}</span><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">${esc(workLine(live))}</span></span><ul class="feed">${feedHTML(live)}</ul></div>`;
   return `<section class="pane-c${S.focus[key] === s.id && S.panes[key].length > 1 ? " focus" : ""}${st === "waiting" ? " unread" : ""}" data-pane="${s.id}">
    <div class="convhead"><div class="l"><span class="sw" style="background:${sp.color}" title="${esc(label)}"></span>
@@ -850,6 +855,131 @@ function wireChats(p, key) {
     };
   });
 }
+
+// Moving around without the mouse (and from the STEER gadget, whose script presses these):
+// ⌃⌥↑/↓ previous/next project in sidebar order, ⌃⌥←/→ previous/next track ("All tracks" included).
+// They wrap at the ends and work while typing; a toast says where you landed.
+const NAV = { ArrowUp: ["p", -1], ArrowDown: ["p", 1], ArrowLeft: ["t", -1], ArrowRight: ["t", 1] };
+document.addEventListener("keydown", (e) => {
+  const n = NAV[e.key]; if (!n || !e.ctrlKey || !e.altKey || e.metaKey || e.shiftKey || !P().length) return;
+  e.preventDefault();
+  const [what, d] = n, wrap = (i, len) => (i + len) % len;
+  if (what === "p") {
+    const i = P().findIndex((p) => p.id === S.view);
+    S.view = P()[i < 0 ? (d > 0 ? 0 : P().length - 1) : wrap(i + d, P().length)].id; S.track = "all"; S.sheet = false; S.filter = "all"; S.msForm = null;
+  } else {
+    const p = proj(); if (!p) return;
+    const ids = ["all", ...p.tracks.map((t) => t.id)], i = Math.max(0, ids.indexOf(S.track));
+    S.track = ids[wrap(i + d, ids.length)]; S.msForm = null;
+  }
+  render();
+  const p = proj(); if (p) toast(`${p.name} · ${S.track === "all" ? "All tracks" : trName(p, S.track)}`);
+});
+
+// The STEER gadget drives the Desk (Diogo, 1 Nov 2026). Its relay on this Mac (127.0.0.1:7899, run by
+// the 3D project's session) streams what the pad feels. Sliding steps through projects (up/down) or the
+// tabs Chats … Files (left/right) one notch at a time as the thumb moves, a flick glides on and slows
+// down, and each notch that really moved gives a tiny buzz (her pick "A": Apple TV remote / iPod wheel
+// feel; no wrap-around, so the ends feel like a wall). A slide that starts on the pad's right-hand
+// column scrolls the open chat instead (smoothly, a flick glides on, a light tick every ~150 px; on the
+// other tabs it scrolls the page). Hold the thumb still = dictate into the open chat's box live;
+// while still holding, slide right = send it now, slide left = keep deleting words until the thumb
+// lifts; just lifting = stop listening, the text stays (her design, 1 Nov: taps no longer send —
+// a tap / double tap mix was too easy to get wrong with live sessions on the other end). Only the Desk window last focused acts, and only while it is
+// on screen. If the relay is not running nothing happens.
+const STEER = "http://127.0.0.1:7899", TABS = ["chats", "roadmap", "board", "meetings", "files"], STEER_ME = Math.random().toString(36).slice(2);
+const steerMine = () => !document.hidden && (localStorage.getItem("steer-owner") || STEER_ME) === STEER_ME;
+window.addEventListener("focus", () => localStorage.setItem("steer-owner", STEER_ME));
+if (document.hasFocus()) localStorage.setItem("steer-owner", STEER_ME);
+const steerBox = () => { const key = paneKey(), sid = S.focus[key] || (S.panes[key] || [])[0]; return sid ? $("say-" + sid) : null; };
+let steerBase = null;
+function steerNav(axis, d) {
+  let moved = false;
+  if (axis === "y") {
+    const ids = P().map((p) => p.id), i = ids.indexOf(S.view), j = i < 0 ? (d > 0 ? 0 : -1) : i + d;
+    if (j >= 0 && j < ids.length) { S.view = ids[j]; S.track = "all"; S.sheet = false; S.filter = "all"; S.msForm = null; moved = true; }
+  } else {
+    const i = Math.max(0, TABS.indexOf(S.tab)), j = i + d;
+    if (j >= 0 && j < TABS.length) { S.tab = TABS[j]; S.msForm = null; moved = true; }
+  }
+  if (!moved) return;
+  save(); render(); fetch(STEER + "/buzz", { method: "POST", body: "18" }).catch(() => {});   // the notch
+  const p = proj();
+  toast(axis === "y" ? (p ? p.name : "All projects") : { chats: "Chats", roadmap: "Roadmap", board: "Board", meetings: "Meetings", files: "Files" }[S.tab]);
+}
+// scrolling: the relay sends thumb travel in pad squares; it is eased in over a few frames so 37 updates
+// a second read as one smooth movement
+let steerTarget = 0, steerTick = 0, steerRaf = 0;
+const steerScroller = () => S.tab === "chats" ? document.querySelector(`.msgs[data-for="${CSS.escape(S.focus[paneKey()] || (S.panes[paneKey()] || [])[0] || "")}"]`) : $("body");
+function steerScroll(dy) {
+  steerTarget += dy * 260;                                   // px per square of thumb travel
+  if (steerRaf) return;
+  const tickFrame = () => {
+    const el = steerScroller(); if (!el) { steerTarget = 0; steerRaf = 0; return; }
+    const step = Math.abs(steerTarget) < 1 ? steerTarget : steerTarget * 0.35, before = el.scrollTop;
+    el.scrollTop += step; steerTarget -= step;
+    steerTick += Math.abs(el.scrollTop - before);
+    if (steerTick >= 150) { steerTick = 0; fetch(STEER + "/buzz", { method: "POST", body: "12" }).catch(() => {}); }
+    if (el.scrollTop === before && Math.abs(step) >= 1) steerTarget = 0;   // at the top or bottom: stop
+    steerRaf = Math.abs(steerTarget) >= 0.5 ? requestAnimationFrame(tickFrame) : 0;
+  };
+  steerRaf = requestAnimationFrame(tickFrame);
+}
+let steerSendNext = false, steerDelT = 0;
+const steerBuzz = (ms) => fetch(STEER + "/buzz", { method: "POST", body: String(ms) }).catch(() => {});
+function steerSend() {
+  const ta = steerBox(); if (S.tab !== "chats" || !ta) return;
+  if (ta.value.trim()) { ta.closest("form").requestSubmit(); toast("Sent."); } else toast("Nothing to send.");
+}
+function steerEdit(action) {
+  if (action === "send") {
+    if (steerBase !== null) steerSendNext = true;            // still writing down the last words: send when they land
+    else steerSend();
+  } else if (action === "delete-start") {
+    steerBase = null; steerSendNext = false;                  // words still in flight are dropped
+    clearTimeout(steerDelT); const t0 = Date.now();
+    const del = () => {
+      const ta = steerBox(); if (!ta || !ta.value) { steerDelT = 0; return; }
+      ta.value = ta.value.replace(/\s*\S+\s*$/, ""); ta.dispatchEvent(new Event("input")); steerBuzz(8);   // one word, one tick
+      steerDelT = setTimeout(del, Date.now() - t0 > 1200 ? 70 : 160);                                       // speeds up after a second
+    };
+    del();
+  } else if (action === "delete-stop") { clearTimeout(steerDelT); steerDelT = 0; }
+}
+function steerGesture() {}                                   // taps do nothing on the Desk (see above)
+function steerDict(j) {
+  if (j.state === "start") {
+    if (S.tab !== "chats") { S.tab = "chats"; save(); render(); }
+    const ta = steerBox(); if (!ta) { toast("Open a chat first."); return; }
+    steerBase = ta.value.trim() ? ta.value.replace(/\s*$/, " ") : ""; ta.focus(); toast("Listening…");
+    return;
+  }
+  if (steerBase === null) return;
+  const ta = steerBox(); if (!ta) return;
+  ta.value = steerBase + (j.text || ""); ta.dispatchEvent(new Event("input"));   // grows the box, enables Send, keeps the draft
+  if (j.state === "end") {
+    steerBase = null;
+    if (steerSendNext) { steerSendNext = false; steerSend(); }
+    else toast(j.text ? "Got it. Hold and slide right to send." : "Didn't catch anything.");
+  }
+}
+(function steer() {
+  const es = new EventSource(STEER + "/events?lite");
+  es.onmessage = (e) => {
+    let j; try { j = JSON.parse(e.data); } catch { return; }
+    if (!steerMine()) return;
+    if (j.k === "nav") steerNav(j.axis, j.d);
+    else if (j.k === "scroll") steerScroll(j.dy);
+    else if (j.k === "edit") steerEdit(j.action);
+    else if (j.k === "gesture") steerGesture(j.ev);
+    else if (j.k === "dict") steerDict(j);
+  };
+  setInterval(() => { if (steerMine()) fetch(STEER + "/claim", { method: "POST" }).catch(() => {}); }, 1500);   // keeps the STEER's Bluetooth mouse off
+})();
+
+// The Desk as an app in the Dock (Safari: File › Add to Dock). The service worker only makes it
+// installable; it caches nothing, so the page is always the live Desk.
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 
 refresh();
 connect();

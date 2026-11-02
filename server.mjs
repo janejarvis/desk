@@ -27,10 +27,10 @@ function broadcast(ev) {
 // ---- what the page shows ----
 const msgCache = new Map();
 function convo(s) {
-  const at = lastWrite(s.id, s.cwd);
+  const at = [s.id, ...(s.previousIds || [])].map((id) => lastWrite(id, s.cwd)).join(",");
   const c = msgCache.get(s.id);
   if (c && c.at === at) return c.msgs;
-  const msgs = messages(s.id, s.cwd);
+  const msgs = messages([...(s.previousIds || []), s.id], s.cwd);
   msgCache.set(s.id, { at, msgs });
   return msgs;
 }
@@ -41,7 +41,7 @@ function sessionView(s, liveMap) {
   const last = msgs[msgs.length - 1];
   const lastAt = last ? Date.parse(last.at) || 0 : 0;
   let state = "idle";
-  if (runner.isRunning(s.id) || l?.status === "busy") state = "working";
+  if (runner.isRunning(s.id) || l?.status === "busy" || (s.bg || []).length) state = "working";
   else if (last?.who === "claude" && lastAt > (Date.parse(s.seenAt || "") || 0) && Date.now() - lastAt < 3 * 864e5) state = "waiting";
   return { ...s, cwd: tilde(s.cwd), state, terminal: !!l?.interactive, lastAt, last: last ? { who: last.who, text: last.text.slice(0, 220), at: last.at } : null };
 }
@@ -51,9 +51,23 @@ function state() {
   return { projects: loadAll().map((p) => ({ ...p, folder: tilde(p.folder), sessions: p.sessions.map((s) => sessionView(s, liveMap)) })) };
 }
 
+// Jobs a session left running past its reply (`desk wait`): when one's process ends, it comes off
+// the session and the session gets a message, so "I'll tell you when it's done" comes true.
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
+function settleBg() {
+  for (const p of loadAll()) for (const s of p.sessions) {
+    const gone = (s.bg || []).filter((b) => !alive(b.pid));
+    if (!gone.length) continue;
+    try { run("session.set", p.id, { id: s.id, bg: s.bg.filter((b) => !gone.includes(b)) }); } catch { continue; }
+    const list = gone.map((b) => `"${b.what}" (process ${b.pid}, started ${b.at.slice(11, 16)} UTC)`).join("; ");
+    try { sendTo(p.id, s.id, `[From the Desk] The background job you asked the Desk to watch has ended: ${list}. Check how it ended (its log or output), update the Desk, and tell Diogo the result in a short reply.`); } catch {}
+  }
+}
+
 // Tell open pages when anything changes: a project file, a session's transcript, a session going busy.
 let sig = "";
 function check() {
+  try { settleBg(); } catch {}
   try {
     const liveMap = live();
     const parts = [];
@@ -69,7 +83,7 @@ let wt; try { mkdirSync(DATA, { recursive: true }); watch(DATA, () => { clearTim
 // Interactive commands (vercel login, gh auth login…) need a real terminal, so the Desk opens one in
 // the session's folder and records it. When it finishes, its output is shown in the pane and goes to
 // the session with the next message, as Claude Code does with !.
-const RUN = join(ROOT, "run");
+const RUN = process.env.DESK_RUN || join(ROOT, "run"); // tests set their own, so they never pick up live replies
 const clean = (t) => t.replace(/\x1b\][^\x07]*(\x07|\x1b\\)/g, "").replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, "").replace(/\x1b[()][A-Z0-9]/g, "")
   .replace(/\r\n/g, "\n").replace(/[^\n]*\r(?!\n)/g, "").replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").replace(/^\^D\x08*/gm, "").trim();
 function shell(pid, sid, cmd) {
@@ -311,7 +325,7 @@ async function body(req) {
   try { return JSON.parse(b || "{}"); } catch { throw Object.assign(new Error("Bad request."), { user: true }); }
 }
 const json = (res, code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json" };
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".webmanifest": "application/manifest+json" };
 
 const routes = {
   "GET /api/state": () => state(),

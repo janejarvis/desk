@@ -45,6 +45,10 @@ App
   desk open                                   start the Desk and open it
   desk restart                                restart it (replies in progress carry on)
 
+Long jobs
+  desk wait <process id> "<what it is>"       a job that outlives your reply (started detached):
+    the Desk shows this session working on it, and messages you when that process ends.
+
 The project and track default to this session's own (when it's on the Desk); pass --project
 and --track otherwise. Names or ids both work.`;
 
@@ -201,5 +205,15 @@ try {
     const pid = project();
     const s = run("session.add", pid, { id: sid, track: track(pid), name: flags.name || "Session", cwd: process.cwd() });
     say(`On the Desk: ${load(pid).name} · ${s.name}`);
+  } else if (cmd === "wait") {
+    const id = Number(a1), what = String(a2 || "").trim();
+    if (!id || !what) fail('Usage: desk wait <process id> "<what it is>"');
+    try { process.kill(id, 0); } catch { fail(`Process ${id} isn't running, so there's nothing to wait for.`); }
+    const m = mine(); const sid = m?.s.id || process.env.DESK_SESSION;
+    if (!sid) fail("Only a session on the Desk can do this.");
+    const pid = m?.p.id || project(); const s = load(pid).sessions.find((x) => x.id === sid || (x.previousIds || []).includes(sid));
+    if (!s) fail("This session isn't on the Desk.");
+    run("session.set", pid, { id: s.id, bg: [...(s.bg || []).filter((b) => b.pid !== id), { pid: id, what: what.slice(0, 120), at: new Date().toISOString() }] });
+    say(`The Desk shows "${what}" as working and will message this session when process ${id} ends.`);
   } else fail(`Unknown command "${cmd}". Run: desk help`);
 } catch (e) { fail(e.message); }

@@ -11,9 +11,13 @@ sessions and meetings. Push back on anything more.
 - No npm packages: plain Node and plain browser JavaScript.
 - Every data change goes through `lib/ops.mjs`, so the page and the `desk` command follow the
   same rules.
-- Never test against the real sessions: use a copy of `data/projects` and `test/fake-claude.mjs`
+- Never test against the real sessions: use a copy of `data/projects`, an empty `DESK_RUN` folder and `test/fake-claude.mjs`
   (see README). Sending from the Desk to a real session continues that session for real.
 - The approved design is the artifact https://claude.ai/artifact/KAW6udsRkTtk1BcVPwtvsT.
 - Projects never mix (Diogo's ruling, 29 Oct 2026): a project's page only offers its own people and
   items, and a session on the Desk can only read and change its own project through `desk`
   (`guard()` in bin/desk.mjs). Only the All projects overview shows them together. Keep it so.
+- Conversations are shown whole, always (Diogo, 1 Nov 2026: "they must never disappear"): every
+  message from the first, across all of a session's ids (`previousIds` + `id`). Never add a message
+  limit or read only the end of a transcript; `lib/sessions.mjs` reads each file once and then only
+  what was added.
