@@ -99,6 +99,7 @@ function connect() {
     let ev; try { ev = JSON.parse(e.data); } catch { return; }
     if (ev.type === "state") soon();
     else if (ev.type === "leads") { if (proj()?.kind === "sales") loadLeads(); }
+    else if (ev.type === "steer") steerOwner = ev.owner;
     else if (ev.type === "renamed") {
       for (const k in S.panes) S.panes[k] = S.panes[k].map((id) => (id === ev.from ? ev.to : id));
       for (const k in S.focus) if (S.focus[k] === ev.from) S.focus[k] = ev.to;
@@ -912,9 +913,14 @@ document.addEventListener("keydown", (e) => {
 // a tap / double tap mix was too easy to get wrong with live sessions on the other end). Only the Desk window last focused acts, and only while it is
 // on screen. If the relay is not running nothing happens.
 const STEER = "http://127.0.0.1:7899", STEER_ME = Math.random().toString(36).slice(2);
-const steerMine = () => !document.hidden && (localStorage.getItem("steer-owner") || STEER_ME) === STEER_ME;
-window.addEventListener("focus", () => localStorage.setItem("steer-owner", STEER_ME));
-if (document.hasFocus()) localStorage.setItem("steer-owner", STEER_ME);
+// Which window the STEER drives is decided by the Desk server, not this browser: two Desk windows in
+// different browsers (the Dock app and a Chrome tab) don't share storage, so both used to act on the
+// same dictation and send it to two chats at once (2 Nov 2026). The window last focused claims it.
+let steerOwner = null;
+const claimSteer = () => fetch("/api/steer", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: STEER_ME }) }).then((r) => r.json()).then((j) => { steerOwner = j.owner; }).catch(() => {});
+const steerMine = () => !document.hidden && steerOwner === STEER_ME;
+window.addEventListener("focus", claimSteer);
+if (document.hasFocus()) claimSteer();
 const steerBox = () => { const key = paneKey(), sid = S.focus[key] || (S.panes[key] || [])[0]; return sid ? $("say-" + sid) : null; };
 let steerBase = null;
 function steerNav(axis, d) {

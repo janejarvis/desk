@@ -392,6 +392,7 @@ async function body(req) {
 const json = (res, code, o) => { res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" }); res.end(JSON.stringify(o)); };
 const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".json": "application/json", ".webmanifest": "application/manifest+json" };
 
+let steerOwner = null;
 const routes = {
   "GET /api/state": () => state(),
   "POST /api/restart": () => { if (!desk.restart) throw Object.assign(new Error("Only the Desk app restarts this way; here use: desk restart"), { user: true }); setTimeout(desk.restart, 300); return { ok: true }; },
@@ -431,6 +432,9 @@ const routes = {
   "POST /api/lead": (b) => { const l = b.op === "add" ? leadsDb.add(b) : leadsDb.set(b.id, b); broadcast({ type: "leads" }); return l; },
   // ---- voice: speech to text on this computer (the local whisper server) ----
   "GET /api/voice": () => ({ ok: VOICE.ok }),
+  // The one Desk window the STEER gadget drives: the last one focused, whatever browser it's in.
+  "POST /api/steer": (b) => { steerOwner = String(b.id || "").slice(0, 40) || steerOwner; broadcast({ type: "steer", owner: steerOwner }); return { owner: steerOwner }; },
+  "GET /api/steer": () => ({ owner: steerOwner }),
   // The system's own folder picker (the app's, or the Mac's when the Desk runs in a browser).
   "POST /api/pick-folder": async () => {
     if (desk.pickFolder) return { folder: await desk.pickFolder() };
