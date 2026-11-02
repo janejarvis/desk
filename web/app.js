@@ -190,6 +190,8 @@ function render() {
 }
 
 const kindOf = (p) => p.kind || "project";
+// The sidebar's order, top to bottom: Projects, then Sales, then Clients. Up/down (keys and STEER) follow it.
+const railOrder = () => ["project", "sales", "client"].flatMap((k) => P().filter((p) => kindOf(p) === k));
 function railItem(p, unread) {
   const cur = S.view === p.id;
   let h = `<button class="ritem" aria-current="${cur}" data-go="${p.id}" title="${esc(p.name)}"><span class="pav${unread(p.sessions) ? " unread" : ""}${p.logo ? " logo" : ""}" style="background:${p.color}">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : esc(p.kind === "sales" ? "€" : p.name[0])}</span><span class="nm">${esc(p.name)}</span><span class="live">${p.kind === "sales" ? "" : p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;
@@ -891,8 +893,9 @@ document.addEventListener("keydown", (e) => {
   e.preventDefault();
   const [what, d] = n, wrap = (i, len) => (i + len) % len;
   if (what === "p") {
-    const i = P().findIndex((p) => p.id === S.view);
-    S.view = P()[i < 0 ? (d > 0 ? 0 : P().length - 1) : wrap(i + d, P().length)].id; S.track = "all"; S.sheet = false; S.filter = "all"; S.msForm = null;
+    const R = railOrder(), i = R.findIndex((p) => p.id === S.view);
+    S.view = R[i < 0 ? (d > 0 ? 0 : R.length - 1) : wrap(i + d, R.length)].id; S.track = "all"; S.sheet = false; S.filter = "all"; S.msForm = null;
+    if (proj()?.kind === "sales") S.tab = "leads"; else if (["leads", "outreach"].includes(S.tab)) S.tab = "chats";
   } else {
     const p = proj(); if (!p) return;
     const ids = ["all", ...p.tracks.map((t) => t.id)], i = Math.max(0, ids.indexOf(S.track));
@@ -927,8 +930,8 @@ let steerBase = null;
 function steerNav(axis, d) {
   let moved = false;
   if (axis === "y") {
-    const ids = P().map((p) => p.id), i = ids.indexOf(S.view), j = i < 0 ? (d > 0 ? 0 : -1) : i + d;
-    if (j >= 0 && j < ids.length) { S.view = ids[j]; S.track = "all"; S.sheet = false; S.filter = "all"; S.msForm = null; moved = true; }
+    const ids = railOrder().map((p) => p.id), i = ids.indexOf(S.view), j = i < 0 ? (d > 0 ? 0 : -1) : i + d;
+    if (j >= 0 && j < ids.length) { S.view = ids[j]; S.track = "all"; S.sheet = false; S.filter = "all"; S.msForm = null; moved = true; if (proj()?.kind === "sales") S.tab = "leads"; else if (["leads", "outreach"].includes(S.tab)) S.tab = "chats"; }
   } else {
     const T = (proj()?.kind === "sales" ? SALES_TABS : PTABS).map((x) => x[0]), i = Math.max(0, T.indexOf(S.tab)), j = i + d;
     if (j >= 0 && j < T.length) { S.tab = T[j]; S.msForm = null; moved = true; }
