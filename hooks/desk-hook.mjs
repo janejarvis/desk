@@ -74,10 +74,10 @@ function skip(cwd) {
 
 if (process.argv.includes("--self-test")) {
   const ok = (c, m) => { console.log((c ? "ok   " : "FAIL ") + m); if (!c) process.exitCode = 1; };
-  const ps = [{ name: "LQA", folder: "~/Projects/LQA", tracks: [{ id: "r", name: "Retainer" }], sessions: [{ id: "S1", track: "r", name: "PMS", previousIds: ["S0"] }] }];
+  const ps = [{ name: "Acme", folder: "~/Projects/Acme", tracks: [{ id: "r", name: "Retainer" }], sessions: [{ id: "S1", track: "r", name: "PMS", previousIds: ["S0"] }] }];
   ok(locate("S1", "/x", ps)?.s?.name === "PMS", "finds a session by id");
   ok(locate("S0", "/x", ps)?.s?.name === "PMS", "finds a session by an earlier id");
-  ok(locate("S9", join(HOME, "Projects/LQA/a"), ps)?.s === null, "finds the project by folder");
+  ok(locate("S9", join(HOME, "Projects/Acme/a"), ps)?.s === null, "finds the project by folder");
   ok(locate("S9", HOME, ps) === null, "home folder is no project");
   const L = (o) => JSON.stringify(o);
   const turn = [L({ message: { role: "user", content: "go" } }), L({ message: { role: "assistant", content: [{ type: "tool_use", name: "Edit", input: {} }, { type: "tool_use", name: "Write", input: {} }] } })];

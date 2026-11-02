@@ -22,8 +22,8 @@ and meeting transcripts. Runs on this Mac only (http://127.0.0.1:4848).
 - `hooks/desk-hook.mjs` — in `~/.claude/settings.json` (SessionStart and Stop): tells each Desk
   session its project and track, and sends a turn back once if it changed things without updating
   the Desk. Turn it off for one session with `DESK_HOOK_OFF=1`.
-- Transcripts: saved as `YYYY-MM-DD_name.txt` in each project's `transcripts` folder (LQA's own
-  `~/Projects/LQA/transcripts`; the others under `transcripts/` here). Word files are converted
+- Transcripts: saved as `YYYY-MM-DD_name.txt` in each project's `transcripts` folder (a project
+  can point it at its own folder; the default is under `transcripts/` here). Word files are converted
   with macOS `textutil` and kept next to the text.
 
 ## Checks
@@ -38,7 +38,7 @@ and meeting transcripts. Runs on this Mac only (http://127.0.0.1:4848).
 - macOS keeps the Desk running: LaunchAgent `~/Library/LaunchAgents/com.blendd.desk.plist` (starts at
   login, restarts if it stops). `desk restart` restarts it at any time; replies in progress carry on
   (they run outside the server, in `run/`, and a new server picks them up).
-- Each project has a brief (`brief` in its data; LQA's own BRIEFING.md, the rest under `briefs/`):
+- Each project has a brief (`brief` in its data; a project can point at its own file, the default is under `briefs/`):
   every session is told to read it first and keep it current.
 - Steps a session wasn't allowed to take from the Desk (they need Diogo's OK) show in its pane, with
   "Run it myself (!)". Finished replies notify (browser notification; a Mac notification when no

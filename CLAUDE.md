@@ -5,7 +5,7 @@ easy for claude code to upkeep", "not overkill or overengineered". Hold that lin
 milestones (title, date, done/now/next), to-dos (to do, doing, blocked, waiting on, sent, done),
 sessions and meetings. Push back on anything more.
 
-- The look is the ACE / Oversight V1 glass language (`~/PACE-projects/Oversight/looks/ace-glass.css`):
+- The look is the glass language of Diogo's earlier tools (see the approved design below):
   white glass, system font, #1d1d1f ink, one blue accent, pill buttons. No counts of to-do / doing
   etc. anywhere but the board's own lanes (Diogo's ruling, 29 Oct 2026).
 - No npm packages: plain Node and plain browser JavaScript. (package.json is only for building the
