@@ -12,7 +12,7 @@ const I = {
   grid: '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1.2"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1.2"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1.2"/><rect x="9" y="9" width="4.5" height="4.5" rx="1.2"/></svg>',
   doc: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M4 1.8h5.5L12.5 5v9.2H4z"/><path d="M9.5 1.8V5h3M6.2 8.2h4M6.2 10.8h4"/></svg>',
 };
-const ME = "Diogo"; // the one person using the Desk
+let ME = "Diogo"; // the one person using the Desk (the server says who, from config.json)
 const STATUSES = [["ongoing", "Ongoing"], ["todo", "To do"], ["doing", "Doing"], ["blocked", "Blocked"], ["waiting", "Waiting on"], ["sent", "Sent"], ["done", "Done"]];
 const ST_KEYS = STATUSES.map((x) => x[0]);
 const EMPTY = { ongoing: "No standing duties.", todo: "Nothing to do.", doing: "Nothing in progress.", blocked: "Nothing blocked.", waiting: "Not waiting on anyone.", sent: "Nothing out for feedback.", done: "Nothing finished recently." };
@@ -82,7 +82,7 @@ const people = (p) => [...new Set([ME, ...(p?.todos || []).flatMap((t) => [t.wai
 const stateOf = (s) => (S.stream[s.id]?.active || (s.state === "idle" && (S.agents[s.id] || []).some((a) => a.state === "running")) ? "working" : s.state);
 
 async function refresh() {
-  try { D = await api("/api/state"); $("offline")?.remove(); }
+  try { D = await api("/api/state"); if (D.me) ME = D.me; $("offline")?.remove(); }
   catch { if (!$("offline")) document.body.insertAdjacentHTML("beforeend", '<div class="offline" id="offline">The Desk server isn\'t running. Start it with: desk open</div>'); return; }
   if (!proj()) { S.view = P()[0]?.id || "all"; S.track = "all"; }
   if (proj() && S.track !== "all" && !proj().tracks.some((t) => t.id === S.track)) S.track = "all";
@@ -639,7 +639,7 @@ function newProject() {
     <div class="vhead"><div class="vt"><b>New project or client</b><span>It gets its own roadmap, board, meetings, files, sessions and a brief.</span></div><button type="button" class="x" id="vclose" aria-label="Close">×</button></div>
     <div class="npbody">
       <label for="np-name">Name<input id="np-name" required maxlength="40" placeholder="e.g. Crumb and Co" autocomplete="off"></label>
-      <label for="np-folder">Folder on this Mac<input id="np-folder" required placeholder="~/Projects/crumb-and-co" autocomplete="off"><small>Where its work lives; sessions start here. It must already exist.</small></label>
+      <label for="np-folder">Folder on this computer<input id="np-folder" required placeholder="~/Projects/crumb-and-co" autocomplete="off"><small>Where its work lives; sessions start here. It must already exist.</small></label>
       <label for="np-tracks">Tracks<input id="np-tracks" placeholder="e.g. Website, Ads, Social" autocomplete="off"><small>Comma-separated. Leave empty for one track; you can add and rename them later.</small></label>
       <div class="nprow"><span class="lbl">Colour</span><span class="swatches">${SWATCHES.map((c, i) => `<button type="button" class="sw-pick" data-c="${c}" aria-pressed="${i === 0}" style="background:${c}" aria-label="Colour ${c}"></button>`).join("")}</span></div>
       <label for="np-logo">Logo (optional)<input type="file" id="np-logo" accept="image/png,image/jpeg,image/svg+xml,image/webp"></label>
@@ -757,7 +757,7 @@ function openViewer(pid, id) {
 document.addEventListener("click", (e) => { const c = e.target.closest?.("[data-fopen]"); if (!c) return; e.preventDefault(); const [pid, id] = c.dataset.fopen.split("|"); openViewer(pid, id); });
 
 /* ---------- Attachments: photos, documents, videos… ---------- */
-const ATTACH_HEAD = "[Attached files, saved on this Mac — open and read them as needed:]";
+const ATTACH_HEAD = "[Attached files, saved on this Mac — open and read them as needed:]"; // kept word for word: past messages are recognised by it
 const kb = (n) => n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
 const isImg = (p) => /\.(png|jpe?g|gif|webp)$/i.test(p);
 function chipsHTML(sid) {
@@ -781,7 +781,7 @@ async function attachFiles(pid, sid, files) {
 function meText(t) {
   const i = t.indexOf(ATTACH_HEAD);
   if (i < 0) return md(t);
-  const files = t.slice(i + ATTACH_HEAD.length).split("\n").map((l) => l.match(/^- (\/\S.*?)(?:\s+\(.*\))?$/)?.[1]).filter(Boolean);
+  const files = t.slice(i + ATTACH_HEAD.length).split("\n").map((l) => l.match(/^- ((?:\/|[A-Za-z]:\\)\S.*?)(?:\s+\(.*\))?$/)?.[1]).filter(Boolean);
   return md(t.slice(0, i).trim()) + `<span class="att">${files.map((p) => isImg(p) ? `<a href="/api/file?path=${encodeURIComponent(p)}" target="_blank" rel="noopener"><img src="/api/file?path=${encodeURIComponent(p)}" alt="" loading="lazy"></a>` : `<span class="chip-file sent"><span class="ext">${esc((p.match(/\.([^.]+)$/) || ["", "file"])[1].slice(0, 4))}</span><span class="fn">${esc(p.split("/").pop().replace(/^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}_/, ""))}</span></span>`).join("")}</span>`;
 }
 

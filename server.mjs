@@ -3,14 +3,20 @@
 // meeting transcripts. 127.0.0.1 only. Data: data/projects/*.json (see lib/store.mjs).
 import http from "node:http";
 import { readFileSync, existsSync, mkdirSync, writeFileSync, watch, statSync, unlinkSync, createWriteStream, createReadStream, readdirSync, rmSync } from "node:fs";
-import { execFileSync, execFile } from "node:child_process";
+import { execFileSync, execFile, spawn } from "node:child_process";
 import { tmpdir, homedir } from "node:os";
 const HOME_DIR = homedir();
 import { join, extname, dirname, basename } from "node:path";
 import { randomUUID } from "node:crypto";
-import { ROOT, DATA, expand, tilde, load, loadAll } from "./lib/store.mjs";
+import { ROOT, DESK_HOME, ME, DATA, expand, tilde, load, loadAll } from "./lib/store.mjs";
 import { run, createProject, ensureBrief } from "./lib/ops.mjs";
 import { messages, lastWrite, live, agents, transcriptPath } from "./lib/sessions.mjs";
+import { docxText } from "./lib/docx.mjs";
+
+// What the installed app (app/main.cjs) does better than plain macOS tools, on every computer:
+// notifications and file previews. Left empty, the Mac's own tools are used.
+export const desk = { notify: null, thumbnail: null, restart: null };
+const MAC = process.platform === "darwin", WIN = process.platform === "win32";
 import { artifactsIn, readFrom } from "./lib/files.mjs";
 import * as runner from "./lib/runner.mjs";
 
@@ -48,7 +54,7 @@ function sessionView(s, liveMap) {
 
 function state() {
   const liveMap = live();
-  return { projects: loadAll().map((p) => ({ ...p, folder: tilde(p.folder), sessions: p.sessions.map((s) => sessionView(s, liveMap)) })) };
+  return { me: ME, projects: loadAll().map((p) => ({ ...p, folder: tilde(p.folder), sessions: p.sessions.map((s) => sessionView(s, liveMap)) })) };
 }
 
 // Jobs a session left running past its reply (`desk wait`): when one's process ends, it comes off
@@ -60,7 +66,7 @@ function settleBg() {
     if (!gone.length) continue;
     try { run("session.set", p.id, { id: s.id, bg: s.bg.filter((b) => !gone.includes(b)) }); } catch { continue; }
     const list = gone.map((b) => `"${b.what}" (process ${b.pid}, started ${b.at.slice(11, 16)} UTC)`).join("; ");
-    try { sendTo(p.id, s.id, `[From the Desk] The background job you asked the Desk to watch has ended: ${list}. Check how it ended (its log or output), update the Desk, and tell Diogo the result in a short reply.`); } catch {}
+    try { sendTo(p.id, s.id, `[From the Desk] The background job you asked the Desk to watch has ended: ${list}. Check how it ended (its log or output), update the Desk, and tell ${ME} the result in a short reply.`); } catch {}
   }
 }
 
@@ -83,32 +89,53 @@ let wt; try { mkdirSync(DATA, { recursive: true }); watch(DATA, () => { clearTim
 // Interactive commands (vercel login, gh auth login…) need a real terminal, so the Desk opens one in
 // the session's folder and records it. When it finishes, its output is shown in the pane and goes to
 // the session with the next message, as Claude Code does with !.
-const RUN = process.env.DESK_RUN || join(ROOT, "run"); // tests set their own, so they never pick up live replies
+const RUN = process.env.DESK_RUN || join(DESK_HOME, "run"); // tests set their own, so they never pick up live replies
 const clean = (t) => t.replace(/\x1b\][^\x07]*(\x07|\x1b\\)/g, "").replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, "").replace(/\x1b[()][A-Z0-9]/g, "")
   .replace(/\r\n/g, "\n").replace(/[^\n]*\r(?!\n)/g, "").replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").replace(/^\^D\x08*/gm, "").trim();
+// The Mac: a Terminal window running the command under `script`, which records everything it shows.
+function macShell(id, cwd, cmd, p, s, log, done) {
+  const q = (x) => "'" + String(x).replace(/'/g, "'\\''") + "'";
+  const inner = join(RUN, id + ".sh"), win = join(RUN, id + ".command");
+  // The trap writes the exit code however the command ends, even if it calls exit itself.
+  writeFileSync(inner, `trap 'echo $? > ${q(done).replace(/'/g, "'\\''")}' EXIT\ncd ${q(cwd)} || exit 1\n${cmd}\n`);
+  writeFileSync(win, `#!/bin/zsh -l\nclear\nprintf '\\033]0;Desk · ${p.name.replace(/'/g, "")} · ${s.name.replace(/'/g, "")}\\007'\necho "Desk · ${p.name.replace(/"/g, "")} · ${s.name.replace(/"/g, "")}   (${tilde(cwd).replace(/"/g, "")})"\nprintf '%s\\n\\n' "$ "${q(cmd)}\nscript -q ${q(log)} /bin/zsh -l ${q(inner)}\necho\necho "Finished. The output is on the Desk and goes to the session with your next message. You can close this window."\n`, { mode: 0o755 });
+  execFileSync("open", ["-a", "Terminal", win]);
+  return [inner, win];
+}
+// Windows: a PowerShell window; a transcript records what it shows, and the exit code is written at the end.
+function winShell(id, cwd, cmd, p, s, log, done) {
+  const ps1 = join(RUN, id + ".ps1"), q = (x) => "'" + String(x).replace(/'/g, "''") + "'";
+  writeFileSync(ps1, [
+    `$Host.UI.RawUI.WindowTitle = ${q(`Desk · ${p.name} · ${s.name}`)}`,
+    `Write-Host ${q(`Desk · ${p.name} · ${s.name}   (${cwd})`)}`, `Write-Host ${q("> " + cmd)}`, `Write-Host ''`,
+    `Start-Transcript -Path ${q(log)} | Out-Null`, `$code = 1`,
+    `try { Set-Location -LiteralPath ${q(cwd)}; $global:LASTEXITCODE = 0`, cmd, `$code = if ($?) { $LASTEXITCODE } elseif ($LASTEXITCODE) { $LASTEXITCODE } else { 1 } }`,
+    `finally { Stop-Transcript | Out-Null; Set-Content -LiteralPath ${q(done)} -Value $code }`,
+    `Write-Host ''`, `Write-Host 'Finished. The output is on the Desk and goes to the session with your next message. You can close this window.'`,
+  ].join("\r\n"), "utf8");
+  spawn("cmd.exe", ["/c", "start", '""', "powershell.exe", "-NoLogo", "-NoExit", "-ExecutionPolicy", "Bypass", "-File", ps1], { detached: true, stdio: "ignore", windowsHide: false }).unref();
+  return [ps1];
+}
 function shell(pid, sid, cmd) {
   const p = load(pid); const s = p.sessions.find((x) => x.id === sid);
   if (!s) throw Object.assign(new Error("That session isn't on the desk any more."), { user: true });
   cmd = String(cmd || "").trim(); if (!cmd) throw Object.assign(new Error("Type a command after the !"), { user: true });
   mkdirSync(RUN, { recursive: true });
   const id = randomUUID().slice(0, 8), cwd = expand(s.cwd) || HOME_DIR;
-  const q = (x) => "'" + String(x).replace(/'/g, "'\\''") + "'";
-  const log = join(RUN, id + ".log"), done = join(RUN, id + ".done"), inner = join(RUN, id + ".sh"), win = join(RUN, id + ".command");
-  // The trap writes the exit code however the command ends, even if it calls exit itself.
-  writeFileSync(inner, `trap 'echo $? > ${q(done).replace(/'/g, "'\\''")}' EXIT\ncd ${q(cwd)} || exit 1\n${cmd}\n`);
-  writeFileSync(win, `#!/bin/zsh -l\nclear\nprintf '\\033]0;Desk · ${p.name.replace(/'/g, "")} · ${s.name.replace(/'/g, "")}\\007'\necho "Desk · ${p.name.replace(/"/g, "")} · ${s.name.replace(/"/g, "")}   (${tilde(cwd).replace(/"/g, "")})"\nprintf '%s\\n\\n' "$ "${q(cmd)}\nscript -q ${q(log)} /bin/zsh -l ${q(inner)}\necho\necho "Finished. The output is on the Desk and goes to the session with your next message. You can close this window."\n`, { mode: 0o755 });
-  execFileSync("open", ["-a", "Terminal", win]);
+  const log = join(RUN, id + ".log"), done = join(RUN, id + ".done");
+  const files = WIN ? winShell(id, cwd, cmd, p, s, log, done) : macShell(id, cwd, cmd, p, s, log, done);
   const entry = { id, cmd, state: "running", at: new Date().toISOString() };
   run("session.set", pid, { id: sid, pendingShell: [...(s.pendingShell || []), entry] });
   const t = setInterval(() => {
     if (!existsSync(done)) return;
     clearInterval(t);
     let out = ""; try { out = clean(readFileSync(log, "utf8")); } catch {}
+    if (WIN) out = out.replace(/\*{20,}\n[\s\S]*?\*{20,}\n?/g, "").replace(/^Transcript started[^\n]*\n?/m, "").trim(); // PowerShell's own header and footer
     const code = (() => { try { return +readFileSync(done, "utf8").trim(); } catch { return null; } })();
     if (out.length > 8000) out = "…" + out.slice(-8000);
     const cur = load(pid).sessions.find((x) => x.id === sid || (x.previousIds || []).includes(sid));
     if (cur) run("session.set", pid, { id: cur.id, pendingShell: (cur.pendingShell || []).map((e) => (e.id === id ? { ...e, state: "done", code, output: out } : e)) });
-    for (const f of [log, done, inner, win]) try { unlinkSync(f); } catch {}
+    for (const f of [log, done, ...files]) try { unlinkSync(f); } catch {}
     broadcast({ type: "state" });
   }, 1000);
   setTimeout(() => clearInterval(t), 6 * 3600e3); // a window left open all day stops being watched
@@ -126,7 +153,8 @@ function macNotify(pid, sid, error) {
   try {
     const p = load(pid), s = p.sessions.find((x) => x.id === sid || (x.previousIds || []).includes(sid));
     const msg = error ? "Stopped with an error." : "Replied. Open the Desk to read it.";
-    execFile("osascript", ["-e", `display notification ${JSON.stringify(msg)} with title ${JSON.stringify("Desk · " + p.name)} subtitle ${JSON.stringify(s?.name || "")}`], () => {});
+    if (desk.notify) return desk.notify("Desk · " + p.name, (s?.name ? s.name + ": " : "") + msg);
+    if (MAC) execFile("osascript", ["-e", `display notification ${JSON.stringify(msg)} with title ${JSON.stringify("Desk · " + p.name)} subtitle ${JSON.stringify(s?.name || "")}`], () => {});
   } catch {}
 }
 
@@ -168,7 +196,7 @@ const slug = (s) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,
 function readMeetingPrompt(p, m) {
   const path = join(expand(p.transcripts), m.file);
   return [
-    `Please read the meeting transcript at ${path} (${p.name} · ${p.tracks.find((t) => t.id === m.track)?.name}; meeting "${m.title}", ${m.date}). You manage what comes out of it: Diogo (the user, who is usually in the meeting) doesn't pick anything.`,
+    `Please read the meeting transcript at ${path} (${p.name} · ${p.tracks.find((t) => t.id === m.track)?.name}; meeting "${m.title}", ${m.date}). You manage what comes out of it: ${ME} (the user, who is usually in the meeting) doesn't pick anything.`,
     `1. Run \`desk status\` and read the board and roadmap as they stand.`,
     `2. Work out what the meeting DECIDED: for each topic, who will do what, by when, and what was found to be already solved or no longer needed. Decisions late in the meeting override earlier ideas.`,
     `3. Make the board match those decisions, as one piece:`,
@@ -184,7 +212,7 @@ function readMeetingPrompt(p, m) {
 }
 
 const fillPrompt = (p, t) => [
-  `Diogo's Desk shows a roadmap and a board for ${p.name} · ${t.name}, and they're empty or out of date. From what you know about this work (this conversation, the project's plan and notes), set them up with the desk command:`,
+  `${ME}'s Desk shows a roadmap and a board for ${p.name} · ${t.name}, and they're empty or out of date. From what you know about this work (this conversation, the project's plan and notes), set them up with the desk command:`,
   `1. The track's milestones in order: \`desk milestone add "<title>" --status done|now|next\` (add --due YYYY-MM-DD only for a real date). Usually 3 to 6; exactly one "now".`,
   `2. The open to-dos under the right milestone with their real status: doing, blocked (--why), waiting (--waiting <name>), sent (--to <name>), or todo. Recently finished ones as done.`,
   `Only real work you know about; don't invent dates or tasks. Run \`desk status\` first so you don't duplicate anything. Reply with two lines on what you set up.`,
@@ -193,7 +221,7 @@ const fillPrompt = (p, t) => [
 // ---- attachments (photos, documents, videos…) for a chat ----
 // Saved under uploads/<project>/ on this Mac; the message then lists their paths so the session
 // reads them itself. Only files in uploads/ are ever served back (for thumbnails).
-const UPLOADS = join(ROOT, "uploads");
+const UPLOADS = join(DESK_HOME, "uploads");
 const MAX_UPLOAD = 500 * 1024 * 1024;
 async function upload(req, res, q) {
   try {
@@ -236,7 +264,7 @@ function sendFile(res, path) {
 
 // ---- Files: what Claude made, previewed in the Files tab and in chats ----
 // Only files registered on a project are ever served or opened, nothing else on disk.
-const THUMBS = join(ROOT, "cache", "thumbs");
+const THUMBS = join(DESK_HOME, "cache", "thumbs");
 const fileOf = (pid, id) => { const f = (load(pid).files || []).find((x) => x.id === id); if (!f || !f.path || !existsSync(f.path)) throw Object.assign(new Error("That file isn't there any more."), { user: true }); return f; };
 const MIME = { ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".svg": "image/svg+xml", ".heic": "image/heic",
   ".mp4": "video/mp4", ".mov": "video/quicktime", ".m4v": "video/mp4", ".webm": "video/webm", ".html": "text/html; charset=utf-8", ".htm": "text/html; charset=utf-8",
@@ -278,6 +306,9 @@ function makeThumb(f) {
   const job = new Promise((resolve) => {
     thumbQueue.push(() => {
       thumbActive++;
+      const done = (png) => { if (png) { mkdirSync(THUMBS, { recursive: true }); writeFileSync(key, png); } else NO_THUMB.add(key); thumbActive--; thumbJobs.delete(key); resolve(png ? key : null); nextThumb(); };
+      if (desk.thumbnail) return desk.thumbnail(f.path).then(done, () => done(null));
+      if (!MAC) return done(null);
       const tmp = join(tmpdir(), "desk-ql-" + randomUUID().slice(0, 8)); mkdirSync(tmp, { recursive: true });
       execFile("qlmanage", ["-t", "-s", "600", "-o", tmp, f.path], { timeout: 30000 }, () => {
         let made = null; try { made = readdirSync(tmp).find((x) => x.endsWith(".png")); } catch {}
@@ -329,6 +360,7 @@ const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; ch
 
 const routes = {
   "GET /api/state": () => state(),
+  "POST /api/restart": () => { if (!desk.restart) throw Object.assign(new Error("Only the Desk app restarts this way; here use: desk restart"), { user: true }); setTimeout(desk.restart, 300); return { ok: true }; },
   "GET /api/messages": (q) => {
     const p = load(q.get("project")); const s = p.sessions.find((x) => x.id === q.get("session"));
     if (!s) return { messages: [] };
@@ -373,12 +405,10 @@ const routes = {
   "POST /api/meeting": (b) => {
     const p = load(b.project);
     let docx = null;
-    if (b.docx) { // a Word file: keep it, and read its text with macOS's textutil
+    if (b.docx) { // a Word file: keep it, and read its text (lib/docx.mjs)
       docx = Buffer.from(String(b.docx), "base64");
-      const tmp = join(tmpdir(), `desk-${randomUUID()}.docx`); writeFileSync(tmp, docx);
-      try { b.text = execFileSync("textutil", ["-convert", "txt", "-stdout", tmp], { encoding: "utf8", maxBuffer: 50e6 }); }
+      try { b.text = docxText(docx); }
       catch { throw Object.assign(new Error("Couldn't read that Word file. Try pasting its text instead."), { user: true }); }
-      finally { try { unlinkSync(tmp); } catch {} }
     }
     const text = String(b.text || ""); if (!text.trim()) throw Object.assign(new Error("Paste or choose a transcript first."), { user: true });
     const date = /^\d{4}-\d{2}-\d{2}$/.test(b.date) ? b.date : new Date().toISOString().slice(0, 10);

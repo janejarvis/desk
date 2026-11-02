@@ -14,12 +14,12 @@ import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deskRules } from "../lib/rules.mjs";
+import { DATA, ME } from "../lib/store.mjs";
 
 const HOME = homedir();
-const DATA = join(dirname(fileURLToPath(import.meta.url)), "..", "data", "projects");
 const STATE = join(HOME, ".claude", "desk-hook");
 const QUIET_MS = 60 * 60 * 1000;
-const expand = (p) => (p || "").replace(/^~(?=\/|$)/, HOME);
+const expand = (p) => (p || "").replace(/^~(?=[\\/]|$)/, HOME);
 
 function projects() {
   try { return readdirSync(DATA).filter((f) => f.endsWith(".json")).map((f) => JSON.parse(readFileSync(join(DATA, f), "utf8"))); } catch { return []; }
@@ -32,7 +32,7 @@ export function locate(sid, cwd, ps) {
 
 export const rules = (p, s) => deskRules(p, s);
 
-const joinHint = (p) => `This folder belongs to ${p.name} on Diogo's Desk (the project app), but this session isn't on it. If this session works on ${p.name}, put it on the Desk with \`desk join --track "<${p.tracks.map((t) => t.name).join(" | ")}>" --name "<short name for what it does>"\`, then keep its to-dos current with \`desk\` (see \`desk help\`).`;
+const joinHint = (p) => `This folder belongs to ${p.name} on ${ME}'s Desk (the project app), but this session isn't on it. If this session works on ${p.name}, put it on the Desk with \`desk join --track "<${p.tracks.map((t) => t.name).join(" | ")}>" --name "<short name for what it does>"\`, then keep its to-dos current with \`desk\` (see \`desk help\`).`;
 
 const READ_ONLY_TOOLS = /^(Read|Grep|Glob|LS|WebSearch|WebFetch|ToolSearch|Skill|AskUserQuestion|TodoWrite|TaskList|TaskGet|ListAgents|ScheduleWakeup|EnterPlanMode|ExitPlanMode|ArtifactComments|ReportFindings)$/;
 const READ_ONLY_BASH = /^\s*(cd [^;&|]+(&&|;)\s*)?(cat|ls|head|tail|grep|rg|find|stat|wc|sed -n|awk|echo|pwd|which|file|du|df|git (status|log|diff|show|branch)|jq|sort|uniq|date|env|printenv|ps|lsof)\b/;
@@ -112,7 +112,7 @@ try {
     // From the Desk: every turn that did real work must update it. In a terminal: at most hourly.
     if (work >= 2 && (FROM_DESK || (now - (st.lastDesk || 0) > QUIET_MS && now - (st.lastBounce || 0) > QUIET_MS))) {
       try { mkdirSync(STATE, { recursive: true }); writeFileSync(f, JSON.stringify({ ...st, lastBounce: now })); } catch {}
-      process.stdout.write(JSON.stringify({ decision: "block", reason: "This turn changed things but Diogo's Desk wasn't updated. Before ending, bring it up to date with `desk`: this track's to-dos (doing, done, blocked, waiting, sent, new follow-ups), milestones reached or re-dated, and any file you handed over (`desk file add`). If nothing on the Desk actually changed, just end the turn; don't explain.\n\n" + rules(hit.p, hit.s) }));
+      process.stdout.write(JSON.stringify({ decision: "block", reason: "This turn changed things but " + ME + "'s Desk wasn't updated. Before ending, bring it up to date with `desk`: this track's to-dos (doing, done, blocked, waiting, sent, new follow-ups), milestones reached or re-dated, and any file you handed over (`desk file add`). If nothing on the Desk actually changed, just end the turn; don't explain.\n\n" + rules(hit.p, hit.s) }));
     }
   }
 } catch {}

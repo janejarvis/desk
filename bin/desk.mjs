@@ -3,10 +3,10 @@
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, existsSync, openSync } from "node:fs";
 import { join } from "node:path";
-import { ROOT, HOME, expand, tilde, load, loadAll } from "../lib/store.mjs";
+import { ROOT, DESK_HOME, ME, HOME, expand, tilde, load, loadAll } from "../lib/store.mjs";
 import { run, projectId, trackOf, ownerOf, STATUSES } from "../lib/ops.mjs";
 
-const HELP = `desk — keep Diogo's Desk current (roadmap, board, meetings).
+const HELP = `desk — keep ${ME}'s Desk current (roadmap, board, meetings).
 
 Read
   desk status [--project P] [--track T]      roadmap and to-dos with their ids
@@ -27,11 +27,11 @@ Roadmap (milestone status: done, now, next)
   desk milestone <id> <status>
   desk milestone set <id> [--title] [--due] [--status] [--note]
 
-Files (what you made for Diogo: documents, PDFs, images, print files, artifacts)
+Files (what you made for ${ME}: documents, PDFs, images, print files, artifacts)
   desk file add <full path or claude.ai artifact link> --title "<plain title>" [--note TEXT]
   desk files                                  list this project's files
   desk file remove <id>
-    Register every file you hand Diogo, when you hand it over. Artifacts you publish are
+    Register every file you hand ${ME}, when you hand it over. Artifacts you publish are
     picked up automatically.
 
 Meetings
@@ -143,14 +143,23 @@ function status() {
 }
 
 // ---- open ----
+// In the installed app (DESK_APP is the app's own program, set by its `desk` launcher) the app is
+// the server: opening the Desk means opening the app, and the app restarts itself when asked.
+function openApp() {
+  const app = process.env.DESK_APP;
+  if (process.platform === "darwin") execFileSync("open", [app.replace(/\/Contents\/MacOS\/[^/]+$/, "")]);
+  else spawn(app, [], { detached: true, stdio: "ignore", env: { ...process.env, ELECTRON_RUN_AS_NODE: "" } }).unref();
+  say("Desk opened.");
+}
 async function open() {
+  if (process.env.DESK_APP) return openApp();
   const port = process.env.DESK_PORT || 4848, url = `http://127.0.0.1:${port}`;
   const up = async () => { try { const r = await fetch(url + "/api/state"); return r.ok && Array.isArray((await r.json()).projects); } catch { return false; } }; // the Desk, not another app on the port
   if (!(await up())) {
     // Normally macOS keeps the Desk running (LaunchAgent com.blendd.desk); start that, else start it here.
     let viaLaunchd = false;
     try { execFileSync("launchctl", ["kickstart", `gui/${process.getuid()}/com.blendd.desk`], { stdio: "ignore" }); viaLaunchd = true; } catch {}
-    if (!viaLaunchd) { const log = openSync(join(ROOT, "desk.log"), "a"); spawn(process.execPath, [join(ROOT, "server.mjs")], { detached: true, stdio: ["ignore", log, log] }).unref(); }
+    if (!viaLaunchd) { const log = openSync(join(DESK_HOME, "desk.log"), "a"); spawn(process.execPath, [join(ROOT, "server.mjs")], { detached: true, stdio: ["ignore", log, log] }).unref(); }
     for (let i = 0; i < 40 && !(await up()); i++) await new Promise((r) => setTimeout(r, 150));
   }
   try { execFileSync("open", [url]); } catch {}
@@ -163,6 +172,9 @@ try {
   if (!cmd || cmd === "help" || flags.help) say(HELP);
   else if (cmd === "status") status();
   else if (cmd === "open") await open();
+  else if (cmd === "restart" && process.env.DESK_APP) {
+    try { await fetch(`http://127.0.0.1:${process.env.DESK_PORT || 4848}/api/restart`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); say("Desk restarted."); }
+    catch { openApp(); } }
   else if (cmd === "restart") { // safe at any time: replies keep running and the new server picks them up
     try { execFileSync("launchctl", ["kickstart", "-k", `gui/${process.getuid()}/com.blendd.desk`], { stdio: "ignore" }); say("Desk restarted."); }
     catch { fail("The Desk isn't installed as a login item. Run: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.blendd.desk.plist"); } }
