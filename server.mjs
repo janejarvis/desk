@@ -57,7 +57,7 @@ function sessionView(s, liveMap) {
 
 function state() {
   const liveMap = live();
-  return { me: ME, version: VERSION, sync: { ...sync.status, shared: leadsDb.ready() || loadAll().some((p) => p.shared) }, voice: VOICE.ok,
+  return { me: ME, version: VERSION, sync: { ...sync.status, github: sync.githubUser(), shared: leadsDb.ready() || loadAll().some((p) => p.shared) }, voice: VOICE.ok,
     projects: loadAll().map((p) => ({ ...p, kind: p.kind || "project", folder: tilde(p.folder), sessions: p.sessions.map((s) => sessionView(s, liveMap)) })) };
 }
 
@@ -433,7 +433,7 @@ const routes = {
   // ---- voice: speech to text on this computer (the local whisper server) ----
   "GET /api/voice": () => ({ ok: VOICE.ok }),
   // Connect: sync now, letting GitHub's sign-in window open (the first time on a computer).
-  "POST /api/sync": async () => { const s = await sync.syncNow({ interactive: true }); broadcast({ type: "state" }); broadcast({ type: "leads" }); return s; },
+  "POST /api/sync": async (b) => { if (b.github) sync.setGithubUser(b.github); const s = await sync.syncNow({ interactive: true }); broadcast({ type: "state" }); broadcast({ type: "leads" }); return s; },
   // The one Desk window the STEER gadget drives: the last one focused, whatever browser it's in.
   "POST /api/steer": (b) => { steerOwner = String(b.id || "").slice(0, 40) || steerOwner; broadcast({ type: "steer", owner: steerOwner }); return { owner: steerOwner }; },
   "GET /api/steer": () => ({ owner: steerOwner }),
