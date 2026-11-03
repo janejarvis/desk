@@ -1172,10 +1172,29 @@ function wireMic(btn, ta) {
   btn.onpointerup = stop; btn.onpointerleave = stop; btn.onpointercancel = stop;
 }
 
+
+/* Numbers: the trend of a figure from its history (desk metric keeps up to 60 points). Green when it moves the
+   good way (better: up by default, "down" for things like unanswered calls), red when the bad way. */
+const mnum = (v) => { const x = parseFloat(String(v).replace(/[^0-9.,-]/g, "").replace(",", ".")); return isFinite(x) ? x : null; };
+const npts = (m) => (m.history || []).map((h) => mnum(h.value)).filter((x) => x !== null);
+function ntrend(m) {
+  const v = npts(m); if (v.length < 2) return "";
+  const a = v[v.length - 2], b = v[v.length - 1], d = b - a; if (!d) return ` <span class="ntr">=</span>`;
+  const good = (d > 0) === (m.better !== "down"), pct = a ? Math.round((d / Math.abs(a)) * 100) : null;
+  return ` <span class="ntr ${good ? "up" : "dn"}">${d > 0 ? "▲" : "▼"} ${pct !== null ? Math.abs(pct) + "%" : Math.abs(d)}</span>`;
+}
+function nspark(m) {
+  const v = npts(m); if (v.length < 2) return "";
+  const lo = Math.min(...v), hi = Math.max(...v), w = 180, h = 34, span = hi - lo || 1;
+  const pts = v.map((x, i) => `${(i / (v.length - 1)) * w},${h - 3 - ((x - lo) / span) * (h - 6)}`).join(" ");
+  const delta = v[v.length - 1] - v[0], good = (delta > 0) === (m.better !== "down");
+  return `<svg class="nspark ${!delta ? "flat" : good ? "up" : "dn"}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}"/></svg>`;
+}
 /* ---------- Numbers: a project's or client's figures, kept by its sessions (desk metric) ---------- */
+
 function renderNumbers() {
   const p = proj(), b = $("body"), ms = p.metrics || [];
-  let h = ms.length ? `<div class="ntiles">${ms.map((m) => `<div class="card ntile"><div class="nl">${esc(m.label)}</div><div class="nv">${esc(m.value)}</div><div class="meta">${m.target ? `<span class="pill">target ${esc(m.target)}</span>` : ""}<span>${esc(m.note || "")}${m.at ? ` · ${esc(clock(m.at))}${m.by ? " by " + esc(m.by) : ""}` : ""}</span></div><button class="linkbtn nrm" data-mrm="${esc(m.key)}">Remove</button></div>`).join("")}</div>`
+  let h = ms.length ? `<div class="ntiles">${ms.map((m) => `<div class="card ntile"><div class="nl">${esc(m.label)}</div><div class="nv">${esc(m.value)}${ntrend(m)}</div>${nspark(m)}<div class="meta">${m.target ? `<span class="pill">target ${esc(m.target)}</span>` : ""}<span>${esc(m.note || "")}${m.at ? ` · ${esc(clock(m.at))}${m.by ? " by " + esc(m.by) : ""}` : ""}</span></div><button class="linkbtn nrm" data-mrm="${esc(m.key)}">Remove</button></div>`).join("")}</div>`
     : `<div class="empty">No numbers yet. Ask in any chat, e.g. "track our monthly reach and newsletter opens on the Numbers tab": Claude keeps them current from then on. Or add one here.</div>`;
   h += `<form class="addform nform" id="nform"><input type="text" id="n-label" placeholder="What to count, e.g. Posts this month" maxlength="60" required><input type="text" id="n-value" placeholder="Value" maxlength="40" required><input type="text" id="n-target" placeholder="Target (optional)" maxlength="40"><button class="btn primary">Add number</button></form>`;
   b.innerHTML = h;
