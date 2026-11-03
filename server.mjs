@@ -22,6 +22,7 @@ export const desk = { notify: null, thumbnail: null, restart: null, pickFolder: 
 const MAC = process.platform === "darwin", WIN = process.platform === "win32";
 import { artifactsIn, readFrom } from "./lib/files.mjs";
 import * as runner from "./lib/runner.mjs";
+import { withShims } from "./lib/accounts.mjs";
 
 const PORT = +(process.env.DESK_PORT || 4848);
 const WEB = join(ROOT, "web");
@@ -226,8 +227,8 @@ function addAsk(pid, sid, a) {
 const askRuns = new Map();
 function askRun(pid, s, a) {
   const id = randomUUID().slice(0, 8), cwd = expand(s.cwd) || HOME_DIR;
-  const child = WIN ? spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", a.cmd], { cwd, windowsHide: true })
-    : spawn("/usr/bin/python3", [join(ROOT, "bin", "pty-run.py"), a.cmd], { cwd, env: { ...process.env, TERM: "xterm-256color" } });
+  const child = WIN ? spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", a.cmd], { cwd, windowsHide: true, env: { ...process.env, PATH: withShims(load(pid), process.env.PATH || "") } })
+    : spawn("/usr/bin/python3", [join(ROOT, "bin", "pty-run.py"), a.cmd], { cwd, env: { ...process.env, TERM: "xterm-256color", PATH: withShims(load(pid), process.env.PATH || "") } });
   const r = { id, pid, sid: s.id, title: a.title, kind: a.kind || "", out: "", done: false, code: null, child };
   askRuns.set(id, r);
   let t = null; const tell = () => { clearTimeout(t); t = setTimeout(() => broadcast({ type: "askrun", run: askView(r) }), 120); };

@@ -59,6 +59,10 @@ Long jobs
   desk wait <process id> "<what it is>"       a job that outlives your reply (started detached):
     the Desk shows this session working on it, and messages you when that process ends.
 
+Accounts (tools with one login per computer, e.g. Vercel)
+  desk account vercel <name> | default        this project's runs use their own Vercel sign-in
+  desk accounts                               which account each tool uses here
+
 Steps only ${ME} can do (a sign-in, an approval, a login in a browser)
   desk ask "<button>" --run "<command>" [--why "<one sentence>"]   a pop-up with one button that
   desk ask "<button>" --open <url> [--why "<one sentence>"]          runs it / opens it; you get a
@@ -242,6 +246,17 @@ try {
     if (!s) fail("This session isn't on the Desk.");
     run("session.set", pid, { id: s.id, bg: [...(s.bg || []).filter((b) => b.pid !== id), { pid: id, what: what.slice(0, 120), at: new Date().toISOString() }] });
     say(`The Desk shows "${what}" as working and will message this session when process ${id} ends.`);
+  } else if (cmd === "account" || cmd === "accounts") {
+    // Which account this project's runs use for tools that keep one login per computer (lib/accounts.mjs).
+    const { TOOLS, accountDir } = await import("../lib/accounts.mjs");
+    const pid = project(), p = load(pid);
+    if (cmd === "accounts" || !a1) { const acc = p.accounts || {}; for (const t of Object.keys(TOOLS)) say(`  ${t.padEnd(8)} ${acc[t] ? `"${acc[t]}" account (${tilde(accountDir(t, acc[t]))})` : "this computer's usual sign-in"}`); }
+    else {
+      if (!TOOLS[a1]) fail(`Separate accounts work for: ${Object.keys(TOOLS).join(", ")}.`);
+      const name = a2 === "default" ? "" : a2; if (a2 === undefined) fail(`Usage: desk account ${a1} <account name, e.g. lqa> | default`);
+      run("project.set", pid, { account: [a1, name] });
+      say(name ? `${p.name} now uses its own "${name}" ${a1} account. If it isn't signed in yet: desk ask "Sign in to ${a1} (${name} account)" --run "${TOOLS[a1].login}" (it signs in to that account only).` : `${p.name} uses this computer's usual ${a1} sign-in again.`);
+    }
   } else if (cmd === "ask") {
     // A step only the person can do (a sign-in, an approval): the Desk shows it as a pop-up with one
     // button that runs the command in its own window (or opens the page), then tells this session.
