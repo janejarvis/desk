@@ -25,7 +25,9 @@ const TODAY = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 const iso = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
 const fmt = (s) => { if (!s) return ""; const d = new Date(s.length === 10 ? s + "T00:00:00" : s); return isNaN(d) ? s : d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }); };
 const fmtShort = (s) => s ? new Date(s + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" }) : "";
-const clock = (s) => { if (!s) return ""; const d = new Date(s); if (isNaN(d)) return ""; const today = iso(TODAY()) === iso(d); return today ? d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }); };
+// Formatters made once (toLocale…String builds a new one on every call, which added up across long chats).
+const F_TIME = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" }), F_DAY = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" });
+const clock = (s) => { if (!s) return ""; const d = new Date(s); if (isNaN(d)) return ""; const today = iso(TODAY()) === iso(d); return today ? F_TIME.format(d) : F_DAY.format(d); };
 const daysSince = (s) => Math.floor((Date.now() - new Date(s)) / 864e5);
 // An ongoing duty is due again one cycle after it was last done.
 const CYCLE = { daily: 1, weekly: 7, monthly: 31 };
@@ -191,10 +193,24 @@ function paintLiveNow(sid) {
 function render() {
   const a = document.activeElement, fid = a?.id, sel = fid && "selectionStart" in a ? [a.selectionStart, a.selectionEnd] : null;
   const scroll = {};
-  document.querySelectorAll(".msgs[data-for]").forEach((m) => (scroll[m.dataset.for] = m.scrollHeight - m.scrollTop - m.clientHeight < 40 ? "end" : m.scrollTop));
+  // Where each chat is scrolled to, kept as "this message, this far from the top" rather than a pixel
+  // count: messages out of view only have an estimated height, so after a redraw the same pixel count
+  // is somewhere else (3 Nov 2026: scrolling down kept pulling Diogo back up).
+  document.querySelectorAll(".msgs[data-for]").forEach((m) => {
+    if (m.scrollHeight - m.scrollTop - m.clientHeight < 40) { scroll[m.dataset.for] = "end"; return; }
+    const top = m.getBoundingClientRect().top, kids = m.children;
+    let i = 0; while (i < kids.length - 1 && kids[i].getBoundingClientRect().bottom <= top) i++;
+    scroll[m.dataset.for] = { i, off: kids[i] ? kids[i].getBoundingClientRect().top - top : 0, px: m.scrollTop };
+  });
   const bodyScroll = $("body")?.scrollTop;
   renderRail(); renderMain(); save();
-  document.querySelectorAll(".msgs[data-for]").forEach((m) => { const v = scroll[m.dataset.for]; m.scrollTop = v === undefined || v === "end" ? m.scrollHeight : v; });
+  document.querySelectorAll(".msgs[data-for]").forEach((m) => {
+    const v = scroll[m.dataset.for];
+    if (v === undefined || v === "end") { m.scrollTop = m.scrollHeight; return; }
+    const el = m.children[v.i];
+    if (!el) { m.scrollTop = v.px; return; }
+    m.scrollTop += el.getBoundingClientRect().top - m.getBoundingClientRect().top - v.off;
+  });
   if (bodyScroll && $("body")) $("body").scrollTop = bodyScroll;
   if (fid && $(fid)) { const el = $(fid); el.focus({ preventScroll: true }); if (sel) try { el.setSelectionRange(...sel); } catch {} }
 }
@@ -250,7 +266,10 @@ function renderMain() {
   if (p) h += `<button class="chip brief" id="briefbtn" title="What every session reads first about ${esc(p.name)}">Brief</button>`;
   if (p && p.kind !== "sales") h += `<div class="tracks">${p.tracks.length > 1 ? `<button class="chip" data-tr="all" aria-pressed="${S.track === "all"}">All tracks</button>` : ""}${p.tracks.map((t) => trackChip(p, t)).join("")}<button class="chip add" id="addtrack">${I.plus}Track</button></div>`;
   h += `</div><div class="body${S.tab === "chats" ? " chat-body" : ""}" id="body"></div>`;
-  $("main").innerHTML = h;
+  // On Chats, a redraw that changes nothing up top keeps the page as it is and only updates the chats
+  // that changed (3 Nov 2026: rebuilding every long chat on each redraw lagged and lost the scroll place).
+  if (S.tab === "chats" && $("main")._top === h + (p?.id || "") && $("body")?.classList.contains("chat-body")) { renderChats(); return; }
+  $("main").innerHTML = h; $("main")._top = h + (p?.id || "");
   $("main").querySelectorAll("[data-tab]").forEach((b) => (b.onclick = () => { S.tab = b.dataset.tab; render(); }));
   if (p) $("briefbtn").onclick = () => openBrief(p);
   if (p && p.kind !== "sales") wireTracks(p); else if (p) { $("briefbtn").onclick = () => openBrief(p); }
@@ -592,7 +611,24 @@ function renderChats() {
         : `<button class="srow" data-s="${s.id}" aria-current="${on}"><span class="dot ${st}"></span><span class="tx"><span class="nm"><span>${esc(s.name)}</span><span class="tm">${esc(clock(s.last?.at))}</span></span><span class="sub">${st === "waiting" ? '<span style="color:var(--warn)">New reply</span> · ' : ""}${esc(trName(pp, s.track))}</span><span class="pv">${s.last ? (s.last.who === "me" ? "You: " : "") + esc(s.last.text) : s.started === false ? "New, not started yet" : ""}</span>${on ? '<span class="open">Open</span>' : ""}</span></button>`;
     }
   }
-  h += `</div><div class="panewrap">`;
+  h += `</div>`;
+  const listH = h.slice(`<div class="chatwrap">`.length);
+  const sig = JSON.stringify([panes, col, !!S.sheet, !!list.length]);
+  const wrap = b.querySelector(".chatwrap");
+  if (wrap && wrap._sig === sig && !S.sheet) {
+    const sl = wrap.querySelector(".slist");
+    if (sl && sl._html !== listH) { const t = document.createElement("template"); t.innerHTML = listH; const n = t.content.firstElementChild; n._html = listH; sl.replaceWith(n); }
+    for (const id of panes) {
+      const x = findS(id); const sec = b.querySelector(`[data-pane="${CSS.escape(id)}"]`); if (!x || !sec) continue;
+      const html = paneHTML(x, key);
+      if (sec._key !== S.paneSig[id]) { const t = document.createElement("template"); t.innerHTML = html; const n = t.content.firstElementChild; n._key = S.paneSig[id]; const m = n.querySelector(".msgs"); if (m) m._body = S.paneBody[id]; sec.replaceWith(n); }
+      else { const hl = sec.querySelector("[data-helpers]"); if (hl) hl.innerHTML = helpersHTML(id); const ch = sec.querySelector("[data-chips]"); if (ch) ch.innerHTML = chipsHTML(id); sec.classList.toggle("focus", S.focus[key] === id && panes.length > 1); }
+    }
+    wireChats(p, key);
+    for (const id of panes) { const x = findS(id); if (x) { ensureMsgs(x.s, x.p); markSeen(x); loadAgents(x); } }
+    return;
+  }
+  h += `<div class="panewrap">`;
   if (S.sheet) {
     h += `<form class="sheet" id="sheet"><label for="ns-name">What should it work on?<input id="ns-name" placeholder="e.g. Fix the booking reminder" maxlength="40" autocomplete="off"></label>
       <label for="ns-track">${p ? "Track" : "Project · track"}<select id="ns-track">${scopeP().flatMap((pp) => pp.tracks.map((t) => `<option value="${pp.id}|${t.id}"${S.track === t.id ? " selected" : ""}>${p ? "" : esc(pp.name) + " · "}${esc(t.name)}</option>`)).join("")}</select></label>
@@ -602,6 +638,9 @@ function renderChats() {
   if (!panes.length) h += `<div class="nochat">${list.length ? "Pick sessions from the list to open them side by side." : "No sessions here yet.<br>Start one to work on something in parallel."}</div>`;
   else h += `<div class="panes">${panes.map((id) => paneHTML(findS(id), key)).join("")}</div>`;
   b.innerHTML = h + `</div></div>`;
+  b.querySelector(".chatwrap")._sig = sig; const sl0 = b.querySelector(".slist"); if (sl0) sl0._html = listH;
+  b.querySelectorAll("[data-pane]").forEach((x) => (x._key = S.paneSig?.[x.dataset.pane]));
+  b.querySelectorAll(".msgs[data-for]").forEach((m) => (m._body = S.paneBody?.[m.dataset.for]));
   wireChats(p, key);
   for (const id of panes) { const x = findS(id); if (x) { ensureMsgs(x.s, x.p); markSeen(x); loadAgents(x); } }
 }
@@ -615,6 +654,8 @@ function paneHTML({ p: sp, s }, key) {
   // A job the session left running past its reply (`desk wait`): it shows here until it ends, then the session reports.
   if (!live?.active) for (const b of s.bg || []) body += `<div class="m claude streaming bgjob"><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">Working in the background · ${esc(b.what)} · since ${esc(clock(b.at))}</span></span><span class="bgnote">${esc(s.name)} will report here when it ends.</span></div>`;
   if (live?.active) body += `<div class="m claude streaming" data-live="${esc(s.id)}"><span class="tx">${md(unsaid(live.text, msgs))}</span><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">${esc(workLine(live))}</span></span><ul class="feed">${feedHTML(live)}</ul></div>`;
+  (S.paneBody ||= {})[s.id] = body;
+  (S.paneSig ||= {})[s.id] = JSON.stringify([body, st, s.name, s.cwd, !!live?.active, s.mine, st === "waiting", D.voice]);
   return `<section class="pane-c${S.focus[key] === s.id && S.panes[key].length > 1 ? " focus" : ""}${st === "waiting" ? " unread" : ""}" data-pane="${s.id}">
    <div class="convhead"><div class="l"><span class="sw" style="background:${sp.color}" title="${esc(label)}"></span>
      <input class="sname" data-rn="${s.id}" data-p="${sp.id}" id="sn-${s.id}" value="${esc(s.name)}" aria-label="Session name" maxlength="40" title="${esc(s.cwd)}"></div>
@@ -890,7 +931,7 @@ function wireChats(p, key) {
   $("newsess").onclick = () => { S.sheet = !S.sheet; render(); $("ns-name")?.focus(); };
   b.querySelectorAll("[data-s]").forEach((x) => (x.onclick = () => { openPane(key, x.dataset.s); $("say-" + x.dataset.s)?.focus(); }));
   b.querySelectorAll("[data-close]").forEach((x) => (x.onclick = () => { S.panes[key] = S.panes[key].filter((id) => id !== x.dataset.close); render(); }));
-  b.querySelectorAll("[data-pane]").forEach((x) => x.addEventListener("focusin", () => { if (S.focus[key] !== x.dataset.pane) { S.focus[key] = x.dataset.pane; b.querySelectorAll(".pane-c").forEach((y) => y.classList.toggle("focus", y === x && S.panes[key].length > 1)); } }));
+  b.querySelectorAll("[data-pane]").forEach((x) => (x.onfocusin = () => { if (S.focus[key] !== x.dataset.pane) { S.focus[key] = x.dataset.pane; b.querySelectorAll(".pane-c").forEach((y) => y.classList.toggle("focus", y === x && S.panes[key].length > 1)); } }));
   wireHelpers(b);
   b.querySelectorAll("[data-runit]").forEach((x) => (x.onclick = () => { const [sid, i] = x.dataset.runit.split("|"); const d = findS(sid)?.s.denied?.[+i]; const ta = $("say-" + sid); if (d && ta) { ta.value = "! " + d.command; ta.dispatchEvent(new Event("input")); ta.focus(); } }));
   b.querySelectorAll("[data-ask]").forEach((x) => (x.onclick = () => { const [pid, sid, id, answer] = x.dataset.ask.split("|"); answerAsk(pid, sid, id, answer); }));
@@ -922,6 +963,7 @@ function wireChats(p, key) {
     pane.ondrop = (e) => { if (!e.dataTransfer.files.length) return; e.preventDefault(); pane.classList.remove("dropping"); attachFiles(pid, sid, [...e.dataTransfer.files]); };
   });
   b.querySelectorAll("[data-send]").forEach((form) => {
+    if (form._wired) return; form._wired = true;   // kept across a redraw: already wired, with its draft
     const sid = form.dataset.send, ta = form.querySelector("textarea"), btn = form.querySelector('button[aria-label="Send"]');
     ta.onpaste = (e) => { const fs = [...(e.clipboardData?.files || [])]; if (fs.length) { e.preventDefault(); attachFiles(form.dataset.p, sid, fs); } };
     try { const d = sessionStorage.getItem("draft-" + sid); if (d) { ta.value = d; btn.disabled = false; } } catch {}
@@ -1088,7 +1130,8 @@ connect();
 /* ---------- Voice: hold the mic, speak, let go — the words land in the message box ---------- */
 // Recorded here, turned into text on this computer (the server's local whisper), never sent anywhere.
 function wireMic(btn, ta) {
-  if (!btn || !ta) return;
+  if (!btn || !ta || btn._wired) return;   // a chat kept across a redraw is already wired (and may be recording)
+  btn._wired = true;
   let rec = null, chunks = [], stream = null;
   const stop = () => { if (rec && rec.state === "recording") rec.stop(); };
   btn.onpointerdown = async (e) => {
