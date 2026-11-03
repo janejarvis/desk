@@ -59,6 +59,11 @@ Long jobs
   desk wait <process id> "<what it is>"       a job that outlives your reply (started detached):
     the Desk shows this session working on it, and messages you when that process ends.
 
+Steps only ${ME} can do (a sign-in, an approval, a login in a browser)
+  desk ask "<button>" --run "<command>" [--why "<one sentence>"]   a pop-up with one button that
+  desk ask "<button>" --open <url> [--why "<one sentence>"]          runs it / opens it; you get a
+    message when it's done. Never tell ${ME} to type a command (no "! ..." in replies).
+
 The project and track default to this session's own (when it's on the Desk); pass --project
 and --track otherwise. Names or ids both work.`;
 
@@ -237,6 +242,18 @@ try {
     if (!s) fail("This session isn't on the Desk.");
     run("session.set", pid, { id: s.id, bg: [...(s.bg || []).filter((b) => b.pid !== id), { pid: id, what: what.slice(0, 120), at: new Date().toISOString() }] });
     say(`The Desk shows "${what}" as working and will message this session when process ${id} ends.`);
+  } else if (cmd === "ask") {
+    // A step only the person can do (a sign-in, an approval): the Desk shows it as a pop-up with one
+    // button that runs the command in its own window (or opens the page), then tells this session.
+    const title = String(a1 || "").trim();
+    if (!title || (!flags.run && !flags.open)) fail('Usage: desk ask "<button, e.g. Sign in to Vercel>" --run "<command>" | --open <url> [--why "<one plain sentence>"]');
+    const m = mine(); const sid = m?.s.id || process.env.DESK_SESSION;
+    if (!sid) fail("Only a session on the Desk can do this.");
+    const pid = m?.p.id || project(); const s = load(pid).sessions.find((x) => x.id === sid || (x.previousIds || []).includes(sid));
+    if (!s) fail("This session isn't on the Desk.");
+    const ask = { id: Math.random().toString(36).slice(2, 10), title: title.slice(0, 80), why: String(flags.why || "").slice(0, 400), cmd: flags.run || "", url: flags.open || "", at: new Date().toISOString() };
+    run("session.set", pid, { id: s.id, asks: [...(s.asks || []).filter((x) => x.title !== ask.title), ask] });
+    say(`The Desk shows "${ask.title}" as a button for ${ME}. When it's done, this session gets a message and carries on; end your reply now and don't ask ${ME} to type anything.`);
   } else if (cmd === "metric" || cmd === "metrics") {
     const pid = project();
     if (cmd === "metrics" || !a1) { const p = load(pid); for (const m of p.metrics || []) say(`  ${m.key.padEnd(22)} ${String(m.value).padEnd(10)} ${m.label}${m.target ? ` (target ${m.target})` : ""}${m.note ? ` · ${m.note}` : ""}`); if (!(p.metrics || []).length) say("No numbers yet."); }

@@ -105,8 +105,9 @@ function macShell(id, cwd, cmd, p, s, log, done) {
   const inner = join(RUN, id + ".sh"), win = join(RUN, id + ".command");
   // The trap writes the exit code however the command ends, even if it calls exit itself.
   writeFileSync(inner, `trap 'echo $? > ${q(done).replace(/'/g, "'\\''")}' EXIT\ncd ${q(cwd)} || exit 1\n${cmd}\n`);
-  writeFileSync(win, `#!/bin/zsh -l\nclear\nprintf '\\033]0;Desk · ${p.name.replace(/'/g, "")} · ${s.name.replace(/'/g, "")}\\007'\necho "Desk · ${p.name.replace(/"/g, "")} · ${s.name.replace(/"/g, "")}   (${tilde(cwd).replace(/"/g, "")})"\nprintf '%s\\n\\n' "$ "${q(cmd)}\nscript -q ${q(log)} /bin/zsh -l ${q(inner)}\necho\necho "Finished. The output is on the Desk and goes to the session with your next message. You can close this window."\n`, { mode: 0o755 });
-  execFileSync("open", ["-a", "Terminal", win]);
+  writeFileSync(win, `#!/bin/zsh -l\nclear\nprintf '\\033]0;Desk · ${p.name.replace(/'/g, "")} · ${s.name.replace(/'/g, "")}\\007'\necho "Desk · ${p.name.replace(/"/g, "")} · ${s.name.replace(/"/g, "")}   (${tilde(cwd).replace(/"/g, "")})"\nprintf '%s\\n\\n' "$ "${q(cmd)}\nscript -q ${q(log)} /bin/zsh -l ${q(inner)}\necho\necho "${s.asking ? "Done. The Desk tells the session to carry on. You can close this window." : "Finished. The output is on the Desk and goes to the session with your next message. You can close this window."}"\n`, { mode: 0o755 });
+  if (process.env.DESK_SHELL === "headless") spawn("/bin/zsh", [win], { stdio: "ignore" }); // tests: no window on the screen
+  else execFileSync("open", ["-a", "Terminal", win]);
   return [inner, win];
 }
 // Windows: a PowerShell window; a transcript records what it shows, and the exit code is written at the end.
@@ -123,15 +124,16 @@ function winShell(id, cwd, cmd, p, s, log, done) {
   spawn("cmd.exe", ["/c", "start", '""', "powershell.exe", "-NoLogo", "-NoExit", "-ExecutionPolicy", "Bypass", "-File", ps1], { detached: true, stdio: "ignore", windowsHide: false }).unref();
   return [ps1];
 }
-function shell(pid, sid, cmd) {
+function shell(pid, sid, cmd, ask = null) {
   const p = load(pid); const s = p.sessions.find((x) => x.id === sid);
   if (!s) throw Object.assign(new Error("That session isn't on the desk any more."), { user: true });
   cmd = String(cmd || "").trim(); if (!cmd) throw Object.assign(new Error("Type a command after the !"), { user: true });
   mkdirSync(RUN, { recursive: true });
   const id = randomUUID().slice(0, 8), cwd = expand(s.cwd) || HOME_DIR;
   const log = join(RUN, id + ".log"), done = join(RUN, id + ".done");
-  const files = WIN ? winShell(id, cwd, cmd, p, s, log, done) : macShell(id, cwd, cmd, p, s, log, done);
-  const entry = { id, cmd, state: "running", at: new Date().toISOString() };
+  const sw = { ...s, asking: !!ask };
+  const files = WIN ? winShell(id, cwd, cmd, p, sw, log, done) : macShell(id, cwd, cmd, p, sw, log, done);
+  const entry = { id, cmd, state: "running", at: new Date().toISOString(), ...(ask ? { ask: ask.title } : {}) };
   run("session.set", pid, { id: sid, pendingShell: [...(s.pendingShell || []), entry] });
   const t = setInterval(() => {
     if (!existsSync(done)) return;
@@ -143,6 +145,7 @@ function shell(pid, sid, cmd) {
     const cur = load(pid).sessions.find((x) => x.id === sid || (x.previousIds || []).includes(sid));
     if (cur) run("session.set", pid, { id: cur.id, pendingShell: (cur.pendingShell || []).map((e) => (e.id === id ? { ...e, state: "done", code, output: out } : e)) });
     for (const f of [log, done, ...files]) try { unlinkSync(f); } catch {}
+    if (ask && cur) try { sendTo(pid, cur.id, ask.resend || `[From the Desk] ${ME} clicked "${ask.title}" and the command above ran in its own window. Check whether it worked and carry on; if it didn't, ask again with \`desk ask\`.`); } catch {}
     broadcast({ type: "state" });
   }, 1000);
   setTimeout(() => clearInterval(t), 6 * 3600e3); // a window left open all day stops being watched
@@ -168,7 +171,10 @@ function macNotify(pid, sid, error) {
 // ---- sending a message to a session ----
 // What to do with a run's events, for one session. Built when a message is sent, and rebuilt for
 // runs a restarted server picks up again (they keep going while the server restarts).
-function handler(pid, sid, wasNew) {
+// Claude's own sign-in ran out (3 Nov 2026: replies came back as "Failed to authenticate: OAuth session
+// expired" and Diogo was left to work out what to type).
+const SIGNED_OUT = /failed to authenticate|oauth (session|token) (has )?expired|please run \/login|not logged in|invalid api key|authentication_error/i;
+function handler(pid, sid, wasNew, sent = "") {
   let cur = sid;
   return (ev) => {
     if (ev.type === "start") { streaming.set(cur, ""); if (wasNew) run("session.set", pid, { id: cur, started: true }); }
@@ -178,6 +184,10 @@ function handler(pid, sid, wasNew) {
     if (ev.type === "message") { const t = streaming.get(cur); if (t && !t.endsWith("\n\n")) streaming.set(cur, t + "\n\n"); }
     if (ev.type === "done" && !clients.size) macNotify(pid, cur, ev.error);
     if (ev.type === "done") { streaming.delete(cur); msgCache.delete(cur); if (ev.error && wasNew) try { run("session.set", pid, { id: cur, started: false }); } catch {} }
+    if (ev.type === "done" && ev.error && SIGNED_OUT.test(ev.error)) {
+      ev = { ...ev, error: "Claude is signed out on this computer." };
+      try { addAsk(pid, cur, { title: "Sign in to Claude again", why: "Claude's sign-in on this computer ran out, so it couldn't reply. A window opens: sign in and click Authorize. Your message is sent again after.", cmd: "claude auth login", resend: sent, kind: "login" }); } catch {}
+    }
     broadcast({ ...ev, type: "stream", kind: ev.type, session: cur });
     if (ev.type === "done" || ev.type === "start") check();
   };
@@ -186,7 +196,7 @@ function handler(pid, sid, wasNew) {
 runner.onQueued((pid, sid, text) => {
   const p = load(pid); const s = p.sessions.find((x) => x.id === sid || (x.previousIds || []).includes(sid));
   if (!s) return null;
-  return { job: { session: { ...s, cwd: expand(s.cwd), started: true }, project: p, trackName: p.tracks.find((t) => t.id === s.track)?.name || "", text, fork: false }, on: handler(pid, s.id, false) };
+  return { job: { session: { ...s, cwd: expand(s.cwd), started: true }, project: p, trackName: p.tracks.find((t) => t.id === s.track)?.name || "", text, fork: false }, on: handler(pid, s.id, false, text) };
 });
 function sendTo(pid, sid, text) {
   const p = load(pid);
@@ -196,7 +206,28 @@ function sendTo(pid, sid, text) {
   const note = shellNote(s);
   if (note) { text = note + text; run("session.set", pid, { id: s.id, pendingShell: (s.pendingShell || []).filter((e) => e.state !== "done") }); }
   const fork = s.started !== false && !runner.isRunning(s.id) && !!live().get(s.id)?.interactive;
-  runner.send({ session: { ...s, cwd: expand(s.cwd) }, project: p, trackName: p.tracks.find((t) => t.id === s.track)?.name || "", text, fork }, handler(pid, s.id, s.started === false));
+  runner.send({ session: { ...s, cwd: expand(s.cwd) }, project: p, trackName: p.tracks.find((t) => t.id === s.track)?.name || "", text, fork }, handler(pid, s.id, s.started === false, text));
+}
+
+// Steps only the person can do (a sign-in, an approval), asked for by the session with `desk ask` or by
+// the Desk itself, shown as a pop-up with one button instead of "type ! <command>" (Diogo, 3 Nov 2026:
+// "I don't want to write terminal code in the Desk"). The button runs the command in a window of its own
+// or opens the page; when it's done, the session is told and carries on.
+function addAsk(pid, sid, a) {
+  const s = load(pid).sessions.find((x) => x.id === sid || (x.previousIds || []).includes(sid)); if (!s) return;
+  const ask = { id: randomUUID().slice(0, 8), title: String(a.title || "One step for you").slice(0, 80), why: String(a.why || "").slice(0, 400), cmd: a.cmd || "", url: a.url || "", resend: a.resend || "", kind: a.kind || "", at: new Date().toISOString() };
+  run("session.set", pid, { id: s.id, asks: [...(s.asks || []).filter((x) => x.title !== ask.title), ask] });
+  broadcast({ type: "state" });
+}
+function answerAsk(pid, sid, id, answer) {
+  const s = load(pid).sessions.find((x) => x.id === sid); const a = (s?.asks || []).find((x) => x.id === id);
+  if (!a) throw Object.assign(new Error("That step is already done."), { user: true });
+  const rest = () => run("session.set", pid, { id: s.id, asks: (load(pid).sessions.find((x) => x.id === s.id)?.asks || []).filter((x) => x.id !== id) });
+  if (answer === "dismiss") { rest(); return { ok: true }; }
+  if (answer === "open" && a.url) { execFile(WIN ? "cmd" : "open", WIN ? ["/c", "start", "", a.url] : [a.url], () => {}); return { ok: true }; }
+  if (answer === "done") { rest(); sendTo(pid, s.id, a.resend || `[From the Desk] ${ME} did the step you asked for: "${a.title}". Check it worked and carry on.`); return { ok: true }; }
+  if (answer === "run" && a.cmd) { rest(); return shell(pid, s.id, a.cmd, a); }
+  throw Object.assign(new Error("Nothing to do for that step."), { user: true });
 }
 
 const slug = (s) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "meeting";
@@ -447,6 +478,8 @@ const routes = {
   "POST /api/briefopen": (b) => { execFileSync("open", [expand(ensureBrief(load(b.project)))]); return { ok: true }; },
   "GET /api/brief": (q) => { const p = load(q.get("project")); const path = expand(ensureBrief(p)); return { path: tilde(path), text: existsSync(path) ? readFileSync(path, "utf8").slice(0, 200000) : "" }; },
   "POST /api/shell": (b) => shell(b.project, b.session, b.cmd),
+  "POST /api/ask": (b) => answerAsk(b.project, b.session, b.id, b.answer),
+  "POST /api/addask": (b) => (addAsk(b.project, b.session, b), { ok: true }),
   "POST /api/stop": (b) => ({ stopped: runner.stop(b.session) }),
   "POST /api/session": (b) => {
     const p = load(b.project);

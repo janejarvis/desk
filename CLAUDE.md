@@ -34,3 +34,7 @@ sessions and meetings. Push back on anything more.
   code on its own, launchd pt.blendd.outreach-bridge. The Desk only shows it (Sales › Outreach) and
   its lead moves (marked desk: true) are sent back so outreach stops writing to those leads. Later
   it becomes a small separate service; never build sending, finding or audits into the Desk.
+- Nobody types commands in the Desk (Diogo, 3 Nov 2026: "I want proper modals for things to happen").
+  A step only the person can do is a `desk ask` (a pop-up with one button that runs the command in its
+  own window or opens the page; the session is messaged when it's done). An expired Claude sign-in
+  becomes one of these by itself and resends the message after.

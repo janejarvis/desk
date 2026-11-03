@@ -89,6 +89,7 @@ async function refresh() {
   if (proj() && S.track !== "all" && !proj().tracks.some((t) => t.id === S.track)) S.track = "all";
   checkNeeds();
   render();
+  checkAsks();
 }
 let refreshT;
 const soon = () => { clearTimeout(refreshT); refreshT = setTimeout(refresh, 150); };
@@ -608,7 +609,8 @@ function paneHTML({ p: sp, s }, key) {
   const st = stateOf(s), live = S.stream[s.id], msgs = S.msgs[s.id]?.list;
   let body = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => `<div class="m ${m.who}">${m.who === "me" ? meText(m.text) : mdKept(m.text)}${m.who === "claude" ? fileCards(sp, s, msgs, m) : ""}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
   for (const [i, d] of (s.denied || []).entries()) body += `<div class="m denied"><div class="dh"><b>Not allowed from the Desk</b><span>${esc(d.tool)} · ${esc(clock(d.at))}</span></div><div class="dd">${esc(d.detail)}</div>${d.command ? `<code class="dc">${esc(d.command.length > 300 ? d.command.slice(0, 300) + "…" : d.command)}</code>` : ""}<div class="dx">Steps that need your OK are refused when sent from the Desk.${d.command ? " Run it yourself, or tell the session how to go on." : " Tell the session how to go on."}</div><div class="db">${d.command ? `<button type="button" class="btn small" data-runit="${esc(s.id)}|${i}">Run it myself (!)</button>` : ""}<button type="button" class="linkbtn" data-undeny="${esc(sp.id)}|${esc(s.id)}|${i}">Dismiss</button></div></div>`;
-  for (const e of s.pendingShell || []) body += `<div class="m shell"><div class="sh-h"><code>$ ${esc(e.cmd)}</code><span>${e.state === "running" ? "running in Terminal…" : `exit ${e.code ?? "?"} · goes with your next message`}</span></div>${e.state === "done" ? `<pre>${esc(e.output || "(no output)")}</pre>` : ""}</div>`;
+  for (const a of s.asks || []) body += askCard(sp, s, a);
+  for (const e of s.pendingShell || []) body += `<div class="m shell"><div class="sh-h">${e.ask ? `<b>${esc(e.ask)}</b>` : `<code>$ ${esc(e.cmd)}</code>`}<span>${e.state === "running" ? (e.ask ? "follow the window that opened…" : "running in Terminal…") : e.ask ? "done · the session carries on" : `exit ${e.code ?? "?"} · goes with your next message`}</span></div>${e.state === "done" && !e.ask ? `<pre>${esc(e.output || "(no output)")}</pre>` : ""}</div>`;
   // A job the session left running past its reply (`desk wait`): it shows here until it ends, then the session reports.
   if (!live?.active) for (const b of s.bg || []) body += `<div class="m claude streaming bgjob"><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">Working in the background · ${esc(b.what)} · since ${esc(clock(b.at))}</span></span><span class="bgnote">${esc(s.name)} will report here when it ends.</span></div>`;
   if (live?.active) body += `<div class="m claude streaming" data-live="${esc(s.id)}"><span class="tx">${md(unsaid(live.text, msgs))}</span><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">${esc(workLine(live))}</span></span><ul class="feed">${feedHTML(live)}</ul></div>`;
@@ -619,8 +621,36 @@ function paneHTML({ p: sp, s }, key) {
    <div class="msgs" data-for="${s.id}">${body}</div>
    <div class="helpers" data-helpers="${esc(s.id)}">${helpersHTML(s.id)}</div>
    <div class="chips" data-chips="${esc(s.id)}">${chipsHTML(s.id)}</div>
-   ${s.mine === false ? `<div class="rofoot">${esc(s.owner)}'s session · it runs on ${esc(s.owner)}'s computer, so only ${esc(s.owner)} can write here. Start your own with + New session.</div></section>` : ""}${s.mine === false ? "" : `<form class="composer" data-send="${s.id}" data-p="${sp.id}"><button type="button" class="btn round clip" data-clip="${esc(s.id)}" aria-label="Attach files" title="Attach photos, documents, videos…">${I.clip}</button>${D.voice ? `<button type="button" class="btn round mic" data-mic="${esc(s.id)}" aria-label="Hold to talk" title="Hold to talk: speak, let go, and the words go into the box">${I.mic}</button>` : ""}<input type="file" multiple hidden data-file="${esc(s.id)}"><textarea id="say-${s.id}" rows="1" placeholder="Message ${esc(s.name)}…  (! runs a command)"></textarea>${live?.active ? `<button type="button" class="btn stop" data-stop="${s.id}" aria-label="Stop" title="Stop">${I.stop}</button>` : ""}<button class="btn primary" aria-label="Send" disabled>${I.send}</button></form></section>`}`;
+   ${s.mine === false ? `<div class="rofoot">${esc(s.owner)}'s session · it runs on ${esc(s.owner)}'s computer, so only ${esc(s.owner)} can write here. Start your own with + New session.</div></section>` : ""}${s.mine === false ? "" : `<form class="composer" data-send="${s.id}" data-p="${sp.id}"><button type="button" class="btn round clip" data-clip="${esc(s.id)}" aria-label="Attach files" title="Attach photos, documents, videos…">${I.clip}</button>${D.voice ? `<button type="button" class="btn round mic" data-mic="${esc(s.id)}" aria-label="Hold to talk" title="Hold to talk: speak, let go, and the words go into the box">${I.mic}</button>` : ""}<input type="file" multiple hidden data-file="${esc(s.id)}"><textarea id="say-${s.id}" rows="1" placeholder="Message ${esc(s.name)}…"></textarea>${live?.active ? `<button type="button" class="btn stop" data-stop="${s.id}" aria-label="Stop" title="Stop">${I.stop}</button>` : ""}<button class="btn primary" aria-label="Send" disabled>${I.send}</button></form></section>`}`;
 }
+/* ---------- Steps only Diogo can do (`desk ask`): a card in the pane, and a pop-up when one is new ---------- */
+const askBtn = (a) => (a.cmd ? (a.kind === "login" ? "Sign in" : "Do it") : "Open it");
+function askCard(sp, s, a) {
+  const k = `${sp.id}|${s.id}|${a.id}`;
+  return `<div class="m ask"><b>${esc(a.title)}</b>${a.why ? `<div class="aw">${esc(a.why)}</div>` : ""}<div class="db"><button type="button" class="btn primary small" data-ask="${k}|${a.cmd ? "run" : "open"}">${askBtn(a)}</button>${a.url ? `<button type="button" class="btn small" data-ask="${k}|done">I've done it</button>` : ""}<button type="button" class="linkbtn" data-ask="${k}|dismiss">Not needed</button></div></div>`;
+}
+async function answerAsk(pid, sid, id, answer) {
+  try { await api("/api/ask", { project: pid, session: sid, id, answer }); } catch (e) { toast(e.message, true); }
+  if (answer === "run") toast("A window opened: follow it there. The session carries on by itself when it's done.");
+  if (answer === "open") { toast("Opened. Click \u201cI've done it\u201d when you're finished."); return; }
+  $("askpop")?.remove(); refresh();
+}
+const askSeen = (() => { try { return new Set(JSON.parse(localStorage.getItem("asks-seen") || "[]")); } catch { return new Set(); } })();
+function checkAsks() {
+  if ($("askpop") || $("viewer")) return;
+  for (const p of P()) for (const s of p.sessions) for (const a of s.asks || []) {
+    if (askSeen.has(a.id) || s.mine === false) continue;
+    askSeen.add(a.id); try { localStorage.setItem("asks-seen", JSON.stringify([...askSeen].slice(-200))); } catch {}
+    notify(`${p.name} · ${s.name}`, a.title, s.id);
+    const k = `${p.id}|${s.id}|${a.id}`;
+    document.body.insertAdjacentHTML("beforeend", `<div class="viewer" id="askpop" role="dialog" aria-label="${esc(a.title)}"><div class="vbox glass small askbox"><div class="vhead"><div class="vt"><b>${esc(a.title)}</b><span>${esc(p.name)} · ${esc(s.name)}</span></div><button class="x" id="askclose" aria-label="Close">×</button></div><div class="askbody">${a.why ? `<p>${esc(a.why)}</p>` : ""}<div class="db"><button type="button" class="btn primary" data-ask="${k}|${a.cmd ? "run" : "open"}">${askBtn(a)}</button>${a.url ? `<button type="button" class="btn" data-ask="${k}|done">I've done it</button>` : ""}<button type="button" class="linkbtn" id="asklater">Later</button></div></div></div></div>`);
+    const pop = $("askpop"), close = () => pop.remove();
+    pop.querySelectorAll("[data-ask]").forEach((x) => (x.onclick = () => { const [pid, sid, id, answer] = x.dataset.ask.split("|"); answerAsk(pid, sid, id, answer); if (answer === "open") { close(); } }));
+    $("askclose").onclick = close; $("asklater").onclick = close; pop.onclick = (e) => { if (e.target === pop) close(); };
+    return;
+  }
+}
+
 /* ---------- Helper agents (subagents) at the bottom of each pane ---------- */
 const dur = (a, b) => { const s = Math.max(0, Math.round((new Date(b || Date.now()) - new Date(a)) / 1000)); if (!a || isNaN(s)) return ""; return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`; };
 function helpersHTML(sid) {
@@ -839,6 +869,7 @@ function wireChats(p, key) {
   b.querySelectorAll("[data-pane]").forEach((x) => x.addEventListener("focusin", () => { if (S.focus[key] !== x.dataset.pane) { S.focus[key] = x.dataset.pane; b.querySelectorAll(".pane-c").forEach((y) => y.classList.toggle("focus", y === x && S.panes[key].length > 1)); } }));
   wireHelpers(b);
   b.querySelectorAll("[data-runit]").forEach((x) => (x.onclick = () => { const [sid, i] = x.dataset.runit.split("|"); const d = findS(sid)?.s.denied?.[+i]; const ta = $("say-" + sid); if (d && ta) { ta.value = "! " + d.command; ta.dispatchEvent(new Event("input")); ta.focus(); } }));
+  b.querySelectorAll("[data-ask]").forEach((x) => (x.onclick = () => { const [pid, sid, id, answer] = x.dataset.ask.split("|"); answerAsk(pid, sid, id, answer); }));
   b.querySelectorAll("[data-undeny]").forEach((x) => (x.onclick = async () => { const [pid, sid, i] = x.dataset.undeny.split("|"); const s = findS(sid)?.s; if (!s) return; await op("session.set", pid, { id: sid, denied: (s.denied || []).filter((_, k) => k !== +i) }).catch(() => {}); refresh(); }));
   b.querySelectorAll("[data-stop]").forEach((x) => (x.onclick = () => api("/api/stop", { session: x.dataset.stop }).catch((e) => toast(e.message, true))));
   const sh = $("sheet");
@@ -950,7 +981,7 @@ function steerNav(axis, d) {
   if (!moved) return;
   save(); render(); fetch(STEER + "/buzz", { method: "POST", body: "18" }).catch(() => {});   // the notch
   const p = proj();
-  toast(axis === "y" ? (p ? p.name : "All projects") : { chats: "Chats", roadmap: "Roadmap", board: "Board", meetings: "Meetings", files: "Files" }[S.tab]);
+  toast(axis === "y" ? (p ? p.name : "All projects") : ([...PTABS, ...SALES_TABS].find((x) => x[0] === S.tab) || [, S.tab])[1]);
 }
 // scrolling: the relay sends thumb travel in pad squares; it is eased in over a few frames so 37 updates
 // a second read as one smooth movement
