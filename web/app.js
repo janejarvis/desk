@@ -20,6 +20,7 @@ const EMPTY = { ongoing: "No standing duties.", todo: "Nothing to do.", doing: "
 const ORDER = { waiting: 0, working: 1, idle: 2 };
 
 const $ = (id) => document.getElementById(id);
+const FIELD_SIZING = CSS.supports?.("field-sizing", "content");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const TODAY = () => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; };
 const iso = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
@@ -620,9 +621,21 @@ function renderChats() {
     if (sl && sl._html !== listH) { const t = document.createElement("template"); t.innerHTML = listH; const n = t.content.firstElementChild; n._html = listH; sl.replaceWith(n); }
     for (const id of panes) {
       const x = findS(id); const sec = b.querySelector(`[data-pane="${CSS.escape(id)}"]`); if (!x || !sec) continue;
-      const html = paneHTML(x, key);
-      if (sec._key !== S.paneSig[id]) { const t = document.createElement("template"); t.innerHTML = html; const n = t.content.firstElementChild; n._key = S.paneSig[id]; const m = n.querySelector(".msgs"); if (m) m._body = S.paneBody[id]; sec.replaceWith(n); }
-      else { const hl = sec.querySelector("[data-helpers]"); if (hl) hl.innerHTML = helpersHTML(id); const ch = sec.querySelector("[data-chips]"); if (ch) ch.innerHTML = chipsHTML(id); sec.classList.toggle("focus", S.focus[key] === id && panes.length > 1); }
+      const html = paneHTML(x, key), pp = S.paneParts[id];
+      const m = sec.querySelector(".msgs"), mt = m?.querySelector(":scope > .mtail");
+      if (sec._head !== pp.head || !m || !mt) { const t = document.createElement("template"); t.innerHTML = html; const n = t.content.firstElementChild; Object.assign(n, { _head: pp.head, _mh: pp.mh, _tail: pp.tail }); sec.replaceWith(n); continue; }
+      // Same chat: add only the new messages (3 Nov 2026: rebuilding a 600-message chat while it replied
+      // froze typing), swap the cards after them, and update the state, unread mark and Stop button.
+      if (sec._mh !== pp.mh) { if (sec._mh && pp.mh.startsWith(sec._mh)) mt.insertAdjacentHTML("beforebegin", pp.mh.slice(sec._mh.length)); else { [...m.children].forEach((c) => c !== mt && c.remove()); mt.insertAdjacentHTML("beforebegin", pp.mh); } sec._mh = pp.mh; }
+      if (sec._tail !== pp.tail) { mt.innerHTML = pp.tail; sec._tail = pp.tail; }
+      const st = stateOf(x.s), live = S.stream[id]?.active, lab = sec.querySelector(".convhead .state");
+      if (lab) { lab.className = `state ${st}`; lab.textContent = st === "working" ? "Working" : st === "waiting" ? "New reply" : "Idle"; }
+      sec.classList.toggle("unread", st === "waiting"); sec.classList.toggle("focus", S.focus[key] === id && panes.length > 1);
+      const form = sec.querySelector("[data-send]"), stop = form?.querySelector("[data-stop]");
+      if (form && live && !stop) form.querySelector('button[aria-label="Send"]').insertAdjacentHTML("beforebegin", `<button type="button" class="btn stop" data-stop="${id}" aria-label="Stop" title="Stop">${I.stop}</button>`);
+      if (stop && !live) stop.remove();
+      const hl = sec.querySelector("[data-helpers]"); if (hl) hl.innerHTML = helpersHTML(id);
+      const ch = sec.querySelector("[data-chips]"); if (ch) ch.innerHTML = chipsHTML(id);
     }
     wireChats(p, key);
     for (const id of panes) { const x = findS(id); if (x) { ensureMsgs(x.s, x.p); markSeen(x); loadAgents(x); } }
@@ -639,23 +652,24 @@ function renderChats() {
   else h += `<div class="panes">${panes.map((id) => paneHTML(findS(id), key)).join("")}</div>`;
   b.innerHTML = h + `</div></div>`;
   b.querySelector(".chatwrap")._sig = sig; const sl0 = b.querySelector(".slist"); if (sl0) sl0._html = listH;
-  b.querySelectorAll("[data-pane]").forEach((x) => (x._key = S.paneSig?.[x.dataset.pane]));
-  b.querySelectorAll(".msgs[data-for]").forEach((m) => (m._body = S.paneBody?.[m.dataset.for]));
+  b.querySelectorAll("[data-pane]").forEach((x) => { const pp = S.paneParts?.[x.dataset.pane]; if (pp) Object.assign(x, { _head: pp.head, _mh: pp.mh, _tail: pp.tail }); });
   wireChats(p, key);
   for (const id of panes) { const x = findS(id); if (x) { ensureMsgs(x.s, x.p); markSeen(x); loadAgents(x); } }
 }
 function paneHTML({ p: sp, s }, key) {
   const label = `${sp.name} · ${trName(sp, s.track)}`; // shown on hover only: the pane header is just the session's name
   const st = stateOf(s), live = S.stream[s.id], msgs = S.msgs[s.id]?.list;
-  let body = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => `<div class="m ${m.who}">${m.who === "me" ? meText(m.text) : mdKept(m.text)}${m.who === "claude" ? fileCards(sp, s, msgs, m) : ""}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
+  const mh = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => `<div class="m ${m.who}">${m.who === "me" ? meText(m.text) : mdKept(m.text)}${m.who === "claude" ? fileCards(sp, s, msgs, m) : ""}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
+  let body = "";   // what follows the messages: refused steps, steps for Diogo, commands, the live reply
   for (const [i, d] of (s.denied || []).entries()) body += `<div class="m denied"><div class="dh"><b>Not allowed from the Desk</b><span>${esc(d.tool)} · ${esc(clock(d.at))}</span></div><div class="dd">${esc(d.detail)}</div>${d.command ? `<code class="dc">${esc(d.command.length > 300 ? d.command.slice(0, 300) + "…" : d.command)}</code>` : ""}<div class="dx">Steps that need your OK are refused when sent from the Desk.${d.command ? " Run it yourself, or tell the session how to go on." : " Tell the session how to go on."}</div><div class="db">${d.command ? `<button type="button" class="btn small" data-runit="${esc(s.id)}|${i}">Run it myself (!)</button>` : ""}<button type="button" class="linkbtn" data-undeny="${esc(sp.id)}|${esc(s.id)}|${i}">Dismiss</button></div></div>`;
   for (const a of s.asks || []) body += askCard(sp, s, a);
   for (const e of s.pendingShell || []) body += `<div class="m shell"><div class="sh-h">${e.ask ? `<b>${esc(e.ask)}</b>` : `<code>$ ${esc(e.cmd)}</code>`}<span>${e.state === "running" ? (e.ask ? "follow the window that opened…" : "running in Terminal…") : e.ask ? "done · the session carries on" : `exit ${e.code ?? "?"} · goes with your next message`}</span></div>${e.state === "done" && !e.ask ? `<pre>${esc(e.output || "(no output)")}</pre>` : ""}</div>`;
   // A job the session left running past its reply (`desk wait`): it shows here until it ends, then the session reports.
   if (!live?.active) for (const b of s.bg || []) body += `<div class="m claude streaming bgjob"><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">Working in the background · ${esc(b.what)} · since ${esc(clock(b.at))}</span></span><span class="bgnote">${esc(s.name)} will report here when it ends.</span></div>`;
   if (live?.active) body += `<div class="m claude streaming" data-live="${esc(s.id)}"><span class="tx">${md(unsaid(live.text, msgs))}</span><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">${esc(workLine(live))}</span></span><ul class="feed">${feedHTML(live)}</ul></div>`;
-  (S.paneBody ||= {})[s.id] = body;
-  (S.paneSig ||= {})[s.id] = JSON.stringify([body, st, s.name, s.cwd, !!live?.active, s.mine, st === "waiting", D.voice]);
+  // Kept so a redraw can add just the new messages and swap just the cards after them (renderChats).
+  (S.paneParts ||= {})[s.id] = { mh, tail: body, head: JSON.stringify([s.name, s.cwd, s.mine, D.voice]) };
+  body = mh + `<div class="mtail">${body}</div>`;
   return `<section class="pane-c${S.focus[key] === s.id && S.panes[key].length > 1 ? " focus" : ""}${st === "waiting" ? " unread" : ""}" data-pane="${s.id}">
    <div class="convhead"><div class="l"><span class="sw" style="background:${sp.color}" title="${esc(label)}"></span>
      <input class="sname" data-rn="${s.id}" data-p="${sp.id}" id="sn-${s.id}" value="${esc(s.name)}" aria-label="Session name" maxlength="40" title="${esc(s.cwd)}"></div>
@@ -967,7 +981,9 @@ function wireChats(p, key) {
     const sid = form.dataset.send, ta = form.querySelector("textarea"), btn = form.querySelector('button[aria-label="Send"]');
     ta.onpaste = (e) => { const fs = [...(e.clipboardData?.files || [])]; if (fs.length) { e.preventDefault(); attachFiles(form.dataset.p, sid, fs); } };
     try { const d = sessionStorage.getItem("draft-" + sid); if (d) { ta.value = d; btn.disabled = false; } } catch {}
-    const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 160) + "px"; };
+    // The box sizes itself (field-sizing in the CSS); measuring it by hand on every key made the whole
+    // chat lay itself out again, so letters showed up late in long chats (3 Nov 2026).
+    const grow = FIELD_SIZING ? () => {} : () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 160) + "px"; };
     grow();
     ta.oninput = () => { btn.disabled = !ta.value.trim() && !(S.attach[sid] || []).some((a) => a.path); grow(); try { sessionStorage.setItem("draft-" + sid, ta.value); } catch {} };
     ta.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } };
