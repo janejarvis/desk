@@ -222,7 +222,7 @@ const railOrder = () => ["project", "sales", "client"].flatMap((k) => P().filter
 function railItem(p, unread) {
   const cur = S.view === p.id;
   let h = `<button class="ritem" aria-current="${cur}" data-go="${p.id}" title="${esc(p.name)}"><span class="pav${unread(p.sessions) ? " unread" : ""}${p.logo ? " logo" : ""}" style="background:${p.color}">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : esc(p.kind === "sales" ? "€" : p.name[0])}</span><span class="nm">${esc(p.name)}</span><span class="live">${p.kind === "sales" ? "" : p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;
-  if (cur && p.tracks.length > 1) h += `<div class="subtracks">${p.tracks.map((t) => `<button data-track="${t.id}" aria-current="${S.track === t.id}"><span>${esc(t.name)}</span><span class="live">${p.sessions.filter((s) => s.track === t.id).map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`).join("")}</div>`;
+  // No track list under the project here: just projects (Diogo, 3 Nov 2026). Tracks are the chips at the top.
   return h;
 }
 // Three separate areas (Diogo, 2 Nov 2026): this person's own Projects, then Sales and the Blendd
