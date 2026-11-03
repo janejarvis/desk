@@ -59,6 +59,10 @@ Long jobs
   desk wait <process id> "<what it is>"       a job that outlives your reply (started detached):
     the Desk shows this session working on it, and messages you when that process ends.
 
+Other chats of this project
+  desk tell "<chat or track>" "<message>"     hand something over: it arrives in that chat and it
+    starts on it. Write it complete (it's all they get). SendMessage/ListAgents don't reach Desk chats.
+
 Accounts (tools with one login per computer, e.g. Vercel)
   desk account vercel <name> | default        this project's runs use their own Vercel sign-in
   desk accounts                               which account each tool uses here
@@ -246,6 +250,24 @@ try {
     if (!s) fail("This session isn't on the Desk.");
     run("session.set", pid, { id: s.id, bg: [...(s.bg || []).filter((b) => b.pid !== id), { pid: id, what: what.slice(0, 120), at: new Date().toISOString() }] });
     say(`The Desk shows "${what}" as working and will message this session when process ${id} ends.`);
+  } else if (cmd === "tell") {
+    // Hands something to another chat of this project on the Desk: it arrives there as a message and
+    // that chat starts working on it (3 Nov 2026: a handover sent with SendMessage reached a program
+    // that happened to be running, the live Call Center copilot, instead of the Call center chat).
+    const to = String(a1 || "").trim(), text = String(a2 || "").trim();
+    if (!to || !text) fail('Usage: desk tell "<chat or track name>" "<the message, complete: it is all they get>"');
+    const pid = project(), p = load(pid), me = mine();
+    const norm = (x) => String(x || "").toLowerCase().trim();
+    const tracks = Object.fromEntries(p.tracks.map((t) => [t.id, t.name]));
+    const others = p.sessions.filter((x) => !me || x.id !== me.s.id);
+    const hits = others.filter((x) => norm(x.name) === norm(to) || norm(tracks[x.track]) === norm(to) || x.id.startsWith(to));
+    if (!hits.length) fail(`No other chat called "${to}" in ${p.name}. Chats here: ${others.map((x) => `${x.name} (${tracks[x.track] || x.track})`).join(", ") || "none"}.`);
+    if (hits.length > 1) fail(`"${to}" matches ${hits.length} chats: ${hits.map((x) => `${x.name} [${x.id.slice(0, 8)}]`).join(", ")}. Use the id.`);
+    const from = me ? `the ${me.s.name} chat (${tracks[me.s.track] || me.s.track})` : "another session";
+    const r = await fetch(`http://127.0.0.1:${process.env.DESK_PORT || 4848}/api/send`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project: pid, session: hits[0].id, text: `[Handed over on the Desk by ${from}] ${text}` }) }).catch(() => null);
+    const j = r ? await r.json().catch(() => ({})) : {};
+    if (!r || !r.ok) fail(j.error || "The Desk isn't running, so the message couldn't be delivered.");
+    say(`Delivered to ${hits[0].name} (${tracks[hits[0].track] || hits[0].track}); it is working on it now (or right after its current reply).`);
   } else if (cmd === "account" || cmd === "accounts") {
     // Which account this project's runs use for tools that keep one login per computer (lib/accounts.mjs).
     const { TOOLS, accountDir } = await import("../lib/accounts.mjs");
