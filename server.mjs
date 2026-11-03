@@ -187,7 +187,7 @@ function handler(pid, sid, wasNew, sent = "") {
     if (ev.type === "done") { streaming.delete(cur); msgCache.delete(cur); if (ev.error && wasNew) try { run("session.set", pid, { id: cur, started: false }); } catch {} }
     // Background helpers the end of the reply stopped before they finished: the session is told to
     // carry the work on in the foreground, at most twice in a row (then it's left to Diogo).
-    if (ev.type === "done" && !ev.error && ev.cutOff?.length) {
+    if ((ev.type === "done" && !ev.error && ev.cutOff?.length) || (ev.type === "cutoff" && ev.cutOff?.length)) {
       const n = (autoGo.get(cur) || 0) + 1; autoGo.set(cur, n);
       if (n <= 2) setTimeout(() => { try { sendTo(pid, cur, `[From the Desk] When your reply ended, ${ev.cutOff.length === 1 ? "this background job was" : "these background jobs were"} stopped before finishing: ${ev.cutOff.map((d) => `"${d}"`).join(", ")}. On the Desk nothing in the background survives the end of a reply. Carry the work on now in the foreground: do it yourself or run helpers synchronously (never run_in_background), and reply only when it's done or truly blocked.`, { auto: true }); } catch {} }, 1500);
     }
