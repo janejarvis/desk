@@ -6,6 +6,7 @@ let input = ""; for await (const c of process.stdin) input += c;
 const id = a.includes("--fork-session") ? randomUUID() : (get("--resume") || get("--session-id"));
 const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
 out({ type: "system", subtype: "init", session_id: id, cwd: process.cwd() });
+if (input.includes("EMPTYFIRST")) out({ type: "result", subtype: "success", is_error: false, result: "", num_turns: 0, session_id: id }); // like a resume that first answers a leftover background-job note
 if (input.includes("SIGNEDOUT")) { out({ type: "result", subtype: "success", is_error: true, result: "Failed to authenticate: OAuth session expired and could not be refreshed", session_id: id }); process.exit(0); }
 out({ type: "stream_event", parent_tool_use_id: null, event: { type: "message_start" } });
 out({ type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_start", content_block: { type: "tool_use", name: "Bash" } } });
