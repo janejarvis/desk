@@ -101,6 +101,7 @@ function connect() {
     if (ev.type === "state") soon();
     else if (ev.type === "leads") { if (proj()?.kind === "sales") loadLeads(); }
     else if (ev.type === "steer") steerOwner = ev.owner;
+    else if (ev.type === "askrun") { if (S.askRun?.id === ev.run.id) { const hidden = !$("askpop"); S.askRun = ev.run; if (!hidden || ev.run.done || ev.run.waiting) askRunPop(); } }
     else if (ev.type === "renamed") {
       for (const k in S.panes) S.panes[k] = S.panes[k].map((id) => (id === ev.from ? ev.to : id));
       for (const k in S.focus) if (S.focus[k] === ev.from) S.focus[k] = ev.to;
@@ -630,12 +631,21 @@ function askCard(sp, s, a) {
   return `<div class="m ask"><b>${esc(a.title)}</b>${a.why ? `<div class="aw">${esc(a.why)}</div>` : ""}<div class="db"><button type="button" class="btn primary small" data-ask="${k}|${a.cmd ? "run" : "open"}">${askBtn(a)}</button>${a.url ? `<button type="button" class="btn small" data-ask="${k}|done">I've done it</button>` : ""}<button type="button" class="linkbtn" data-ask="${k}|dismiss">Not needed</button></div></div>`;
 }
 async function answerAsk(pid, sid, id, answer) {
-  try { await api("/api/ask", { project: pid, session: sid, id, answer }); } catch (e) { toast(e.message, true); }
-  if (answer === "run") toast("A window opened: follow it there. The session carries on by itself when it's done.");
+  let r; try { r = await api("/api/ask", { project: pid, session: sid, id, answer }); } catch (e) { return toast(e.message, true); }
   if (answer === "open") { toast("Opened. Click \u201cI've done it\u201d when you're finished."); return; }
-  $("askpop")?.remove(); refresh();
+  $("askpop")?.remove();
+  if (answer === "run" && r?.id) { S.askRun = r; askRunPop(); }
+  refresh();
 }
 const askSeen = (() => { try { return new Set(JSON.parse(localStorage.getItem("asks-seen") || "[]")); } catch { return new Set(); } })();
+function askPop(inner, label) {
+  $("askpop")?.remove();
+  document.body.insertAdjacentHTML("beforeend", `<div class="viewer" id="askpop" role="dialog" aria-label="${esc(label)}"><div class="vbox glass small askbox">${inner}</div></div>`);
+  const pop = $("askpop");
+  pop.querySelectorAll("[data-close-pop]").forEach((x) => (x.onclick = () => pop.remove()));
+  pop.onclick = (e) => { if (e.target === pop) pop.remove(); };
+  return pop;
+}
 function checkAsks() {
   if ($("askpop") || $("viewer")) return;
   for (const p of P()) for (const s of p.sessions) for (const a of s.asks || []) {
@@ -643,12 +653,26 @@ function checkAsks() {
     askSeen.add(a.id); try { localStorage.setItem("asks-seen", JSON.stringify([...askSeen].slice(-200))); } catch {}
     notify(`${p.name} · ${s.name}`, a.title, s.id);
     const k = `${p.id}|${s.id}|${a.id}`;
-    document.body.insertAdjacentHTML("beforeend", `<div class="viewer" id="askpop" role="dialog" aria-label="${esc(a.title)}"><div class="vbox glass small askbox"><div class="vhead"><div class="vt"><b>${esc(a.title)}</b><span>${esc(p.name)} · ${esc(s.name)}</span></div><button class="x" id="askclose" aria-label="Close">×</button></div><div class="askbody">${a.why ? `<p>${esc(a.why)}</p>` : ""}<div class="db"><button type="button" class="btn primary" data-ask="${k}|${a.cmd ? "run" : "open"}">${askBtn(a)}</button>${a.url ? `<button type="button" class="btn" data-ask="${k}|done">I've done it</button>` : ""}<button type="button" class="linkbtn" id="asklater">Later</button></div></div></div></div>`);
-    const pop = $("askpop"), close = () => pop.remove();
-    pop.querySelectorAll("[data-ask]").forEach((x) => (x.onclick = () => { const [pid, sid, id, answer] = x.dataset.ask.split("|"); answerAsk(pid, sid, id, answer); if (answer === "open") { close(); } }));
-    $("askclose").onclick = close; $("asklater").onclick = close; pop.onclick = (e) => { if (e.target === pop) close(); };
+    const pop = askPop(`<div class="vhead"><div class="vt"><b>${esc(a.title)}</b><span>${esc(p.name)} · ${esc(s.name)}</span></div><button class="x" data-close-pop aria-label="Close">×</button></div><div class="askbody">${a.why ? `<p>${esc(a.why)}</p>` : ""}<div class="db"><button type="button" class="btn primary" data-ask="${k}|${a.cmd ? "run" : "open"}">${askBtn(a)}</button>${a.url ? `<button type="button" class="btn" data-ask="${k}|done">I've done it</button>` : ""}<button type="button" class="linkbtn" data-close-pop>Later</button></div></div>`, a.title);
+    pop.querySelectorAll("[data-ask]").forEach((x) => (x.onclick = () => { const [pid, sid, id, answer] = x.dataset.ask.split("|"); answerAsk(pid, sid, id, answer); }));
     return;
   }
+}
+// While a step's command runs (hidden): what it's waiting for, any link or code it printed, a box to
+// answer it, and Cancel. Closes by itself when it ends; the session then carries on.
+function askRunPop() {
+  const r = S.askRun; if (!r) return;
+  const out = r.out || "", lines = out.split("\n").map((l) => l.trim()).filter(Boolean);
+  const links = [...new Set(out.match(/https?:\/\/[^\s"'<>)\]]+/g) || [])].slice(-3);
+  const code = (out.match(/\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/g) || []).pop();
+  const status = r.done ? (r.cancelled ? "Cancelled." : r.code === 0 ? "Done. The session carries on by itself." : "It didn't finish. The session has been told and will say what's next.") : r.waiting ? "It's asking something:" : links.length ? "Finish in the browser page that opened (or open it below)." : "Working… a browser page may open: follow it there.";
+  const last = lines.slice(-1)[0] || "";
+  const keep = $("askin")?.value || "";
+  const pop = askPop(`<div class="vhead"><div class="vt"><b>${esc(r.title)}</b><span>${r.done ? "finished" : "in progress"}</span></div><button class="x" data-close-pop aria-label="Close">×</button></div><div class="askbody"><p>${esc(status)}</p>${!r.done && r.waiting ? `<p class="askq">${esc(last)}</p><form class="db" id="askform"><input class="askin" id="askin" autocomplete="off" value="${esc(keep)}"><button class="btn primary" type="submit">Send</button></form>` : ""}${code && !r.done ? `<p class="askcode">Code: <b>${esc(code)}</b></p>` : ""}${!r.done && links.length ? `<div class="db">${links.map((u) => `<a class="btn" href="${esc(u)}" target="_blank" rel="noopener">Open ${esc(new URL(u).hostname)}</a>`).join("")}</div>` : ""}${!r.done ? `<div class="db"><button type="button" class="linkbtn" id="askcancel">Cancel</button><button type="button" class="linkbtn" data-close-pop>Hide</button></div>` : ""}${last && !r.waiting ? `<p class="asklast">${esc(last.slice(0, 200))}</p>` : ""}</div>`, r.title);
+  $("askform")?.addEventListener("submit", async (e) => { e.preventDefault(); const v = $("askin").value; $("askin").value = ""; try { await api("/api/askinput", { run: r.id, text: v }); } catch (er) { toast(er.message, true); } });
+  if ($("askin")) $("askin").focus();
+  if ($("askcancel")) $("askcancel").onclick = () => api("/api/askcancel", { run: r.id }).catch(() => {});
+  if (r.done) setTimeout(() => { if (S.askRun === r) { $("askpop")?.remove(); S.askRun = null; } }, r.code === 0 ? 1800 : 6000);
 }
 
 /* ---------- Helper agents (subagents) at the bottom of each pane ---------- */

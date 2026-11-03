@@ -219,6 +219,35 @@ function addAsk(pid, sid, a) {
   run("session.set", pid, { id: s.id, asks: [...(s.asks || []).filter((x) => x.title !== ask.title), ask] });
   broadcast({ type: "state" });
 }
+// The button's command runs hidden, in a pseudo-terminal of its own (bin/pty-run.py; Windows: a hidden
+// PowerShell), not in a Terminal window (Diogo, 3 Nov 2026: "it's still opening terminal in the
+// foreground"). The sign-in tools open the browser themselves; the pop-up shows any link or code they
+// print, and a box to answer if one asks a question.
+const askRuns = new Map();
+function askRun(pid, s, a) {
+  const id = randomUUID().slice(0, 8), cwd = expand(s.cwd) || HOME_DIR;
+  const child = WIN ? spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", a.cmd], { cwd, windowsHide: true })
+    : spawn("/usr/bin/python3", [join(ROOT, "bin", "pty-run.py"), a.cmd], { cwd, env: { ...process.env, TERM: "xterm-256color" } });
+  const r = { id, pid, sid: s.id, title: a.title, kind: a.kind || "", out: "", done: false, code: null, child };
+  askRuns.set(id, r);
+  let t = null; const tell = () => { clearTimeout(t); t = setTimeout(() => broadcast({ type: "askrun", run: askView(r) }), 120); };
+  const add = (d) => { r.out = (r.out + String(d)).slice(-40000); tell(); };
+  child.stdout.on("data", add); child.stderr.on("data", add);
+  child.on("error", (e) => add(`\n${e.message}\n`));
+  child.on("close", (code) => {
+    Object.assign(r, { done: true, code }); broadcast({ type: "askrun", run: askView(r) });
+    setTimeout(() => askRuns.delete(id), 10 * 60e3);
+    if (r.cancelled) return;
+    const cur = load(pid).sessions.find((x) => x.id === s.id || (x.previousIds || []).includes(s.id)); if (!cur) return;
+    const tail = clean(r.out).slice(-3000) || "(it printed nothing)";
+    try { sendTo(pid, cur.id, code === 0 && a.resend ? a.resend : `[From the Desk] ${ME} clicked "${a.title}". It ran \`${a.cmd}\` (hidden, in ${tilde(cwd)}) and ended with exit code ${code}. What it printed:\n\`\`\`\n${tail}\n\`\`\`\nCheck whether it worked and carry on; if it didn't, ask again with \`desk ask\`.`); } catch {}
+  });
+  setTimeout(() => { if (!r.done) { r.cancelled = true; try { child.kill(); } catch {} } }, 30 * 60e3); // a sign-in left open for half an hour is given up
+  return askView(r);
+}
+const askView = (r) => ({ id: r.id, project: r.pid, session: r.sid, title: r.title, kind: r.kind, out: clean(r.out).slice(-4000), waiting: /[?:>]\s*$/.test(clean(r.out.slice(-400))), done: r.done, code: r.code, cancelled: !!r.cancelled });
+function askInput(id, text) { const r = askRuns.get(id); if (!r || r.done) throw Object.assign(new Error("That step has already finished."), { user: true }); r.child.stdin.write(String(text) + (WIN ? "\r\n" : "\n")); return { ok: true }; }
+function askCancel(id) { const r = askRuns.get(id); if (r && !r.done) { r.cancelled = true; try { r.child.kill(); } catch {} } return { ok: true }; }
 function answerAsk(pid, sid, id, answer) {
   const s = load(pid).sessions.find((x) => x.id === sid); const a = (s?.asks || []).find((x) => x.id === id);
   if (!a) throw Object.assign(new Error("That step is already done."), { user: true });
@@ -226,7 +255,7 @@ function answerAsk(pid, sid, id, answer) {
   if (answer === "dismiss") { rest(); return { ok: true }; }
   if (answer === "open" && a.url) { execFile(WIN ? "cmd" : "open", WIN ? ["/c", "start", "", a.url] : [a.url], () => {}); return { ok: true }; }
   if (answer === "done") { rest(); sendTo(pid, s.id, a.resend || `[From the Desk] ${ME} did the step you asked for: "${a.title}". Check it worked and carry on.`); return { ok: true }; }
-  if (answer === "run" && a.cmd) { rest(); return shell(pid, s.id, a.cmd, a); }
+  if (answer === "run" && a.cmd) { rest(); return askRun(pid, s, a); }
   throw Object.assign(new Error("Nothing to do for that step."), { user: true });
 }
 
@@ -479,6 +508,8 @@ const routes = {
   "GET /api/brief": (q) => { const p = load(q.get("project")); const path = expand(ensureBrief(p)); return { path: tilde(path), text: existsSync(path) ? readFileSync(path, "utf8").slice(0, 200000) : "" }; },
   "POST /api/shell": (b) => shell(b.project, b.session, b.cmd),
   "POST /api/ask": (b) => answerAsk(b.project, b.session, b.id, b.answer),
+  "POST /api/askinput": (b) => askInput(b.run, b.text),
+  "POST /api/askcancel": (b) => askCancel(b.run),
   "POST /api/addask": (b) => (addAsk(b.project, b.session, b), { ok: true }),
   "POST /api/stop": (b) => ({ stopped: runner.stop(b.session) }),
   "POST /api/session": (b) => {

@@ -623,3 +623,8 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 .askbody{padding:16px;display:flex;flex-direction:column;gap:14px;font-size:14px;color:var(--ink-2)}
 .askbody p{margin:0;line-height:1.5}
 .m.shell .sh-h b{font-size:13px}
+.askbody .askq{font-weight:500;color:var(--ink)}
+.askbody .askcode b{font:600 16px var(--mono);letter-spacing:.06em;color:var(--ink)}
+.askbody .asklast{font-size:12px;color:var(--ink-3);overflow-wrap:anywhere}
+.askin{flex:1;min-width:0;border:1px solid var(--hair);border-radius:10px;padding:8px 10px;font:inherit;background:var(--glass-2)}
+.askbody a.btn{text-decoration:none;color:var(--ink)}
