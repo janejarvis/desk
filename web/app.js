@@ -136,7 +136,7 @@ function step(st, line) { const s = (st.steps ||= []); if (!line || (line === "T
 const feedHTML = (st) => (st.steps || []).slice(-6).map((l, i, a) => `<li class="${i === a.length - 1 ? "now" : ""}">${esc(l)}</li>`).join("");
 const workLine = (st) => `${st.tool ? "Working · " + st.tool : "Working"}${st.since ? " · " + dur(new Date(st.since).toISOString()) : ""}`;
 // The working line's timer ticks even when nothing new arrives, so a long step never looks frozen.
-setInterval(() => { for (const id in S.stream) if (S.stream[id].active) paintLive(id); }, 1000);
+setInterval(() => { for (const id in S.stream) if (S.stream[id].active) { const w = document.querySelector(`[data-live="${CSS.escape(id)}"] .wk`); if (w) w.textContent = workLine(S.stream[id]); } }, 1000);
 /* ---------- Notifications: a reply finished, or something new needs Diogo ---------- */
 const canNotify = () => "Notification" in window && Notification.permission === "granted";
 const away = () => document.hidden || !document.hasFocus();
@@ -167,7 +167,15 @@ function unsaid(text, msgs) {
   }
   return text;
 }
+// Many small pieces arrive per second while a reply streams; the pane is painted at most once a frame
+// (3 Nov 2026: three chats replying at once in UrgentPlumber made the whole Desk lag).
+const livePending = new Set();
 function paintLive(sid) {
+  if (livePending.has(sid)) return;
+  livePending.add(sid);
+  requestAnimationFrame(() => { livePending.delete(sid); paintLiveNow(sid); });
+}
+function paintLiveNow(sid) {
   const el = document.querySelector(`[data-live="${CSS.escape(sid)}"]`);
   if (!el) return;
   const st = S.stream[sid];

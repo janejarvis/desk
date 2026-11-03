@@ -612,3 +612,6 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 .banner-note{background:var(--warn-soft);color:var(--warn);border-radius:12px;padding:10px 14px;font-size:13px;margin-bottom:14px}
 .ltl li.hist .s{border-color:var(--ink-3);background:var(--soft)}
 .ghuser{width:100%;margin:6px 0 2px;height:28px;border:1px solid var(--hair);border-radius:8px;padding:0 8px;font:inherit;font-size:12px;background:var(--glass-2)}
+/* Messages scrolled out of view aren't laid out or painted (3 Nov 2026: three long chats replying at
+   once made every redraw take most of a second). Every message is still there, whole. */
+.msgs>*:not(:nth-last-child(-n+6)){content-visibility:auto;contain-intrinsic-size:auto 160px}
