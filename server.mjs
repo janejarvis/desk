@@ -185,6 +185,12 @@ function handler(pid, sid, wasNew, sent = "") {
     if (ev.type === "message") { const t = streaming.get(cur); if (t && !t.endsWith("\n\n")) streaming.set(cur, t + "\n\n"); }
     if (ev.type === "done" && !clients.size) macNotify(pid, cur, ev.error);
     if (ev.type === "done") { streaming.delete(cur); msgCache.delete(cur); if (ev.error && wasNew) try { run("session.set", pid, { id: cur, started: false }); } catch {} }
+    // Background helpers the end of the reply stopped before they finished: the session is told to
+    // carry the work on in the foreground, at most twice in a row (then it's left to Diogo).
+    if (ev.type === "done" && !ev.error && ev.cutOff?.length) {
+      const n = (autoGo.get(cur) || 0) + 1; autoGo.set(cur, n);
+      if (n <= 2) setTimeout(() => { try { sendTo(pid, cur, `[From the Desk] When your reply ended, ${ev.cutOff.length === 1 ? "this background job was" : "these background jobs were"} stopped before finishing: ${ev.cutOff.map((d) => `"${d}"`).join(", ")}. On the Desk nothing in the background survives the end of a reply. Carry the work on now in the foreground: do it yourself or run helpers synchronously (never run_in_background), and reply only when it's done or truly blocked.`, { auto: true }); } catch {} }, 1500);
+    }
     if (ev.type === "done" && ev.error && SIGNED_OUT.test(ev.error)) {
       ev = { ...ev, error: "Claude is signed out on this computer." };
       try { addAsk(pid, cur, { title: "Sign in to Claude again", why: "Claude's sign-in on this computer ran out, so it couldn't reply. A window opens: sign in and click Authorize. Your message is sent again after.", cmd: "claude auth login", resend: sent, kind: "login" }); } catch {}
@@ -199,7 +205,9 @@ runner.onQueued((pid, sid, text) => {
   if (!s) return null;
   return { job: { session: { ...s, cwd: expand(s.cwd), started: true }, project: p, trackName: p.tracks.find((t) => t.id === s.track)?.name || "", text, fork: false }, on: handler(pid, s.id, false, text) };
 });
-function sendTo(pid, sid, text) {
+const autoGo = new Map(); // session -> automatic "carry on" messages sent in a row
+function sendTo(pid, sid, text, { auto = false } = {}) {
+  if (!auto) autoGo.delete(sid);
   const p = load(pid);
   const s = p.sessions.find((x) => x.id === sid);
   if (!s) throw Object.assign(new Error("That session isn't on the desk any more."), { user: true });
