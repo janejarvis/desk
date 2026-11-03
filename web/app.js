@@ -1173,33 +1173,48 @@ function wireMic(btn, ta) {
 }
 
 
-/* Numbers: the trend of a figure from its history (desk metric keeps up to 60 points). Green when it moves the
-   good way (better: up by default, "down" for things like unanswered calls), red when the bad way. */
-const mnum = (v) => { const x = parseFloat(String(v).replace(/[^0-9.,-]/g, "").replace(",", ".")); return isFinite(x) ? x : null; };
-const npts = (m) => (m.history || []).map((h) => mnum(h.value)).filter((x) => x !== null);
-function ntrend(m) {
-  const v = npts(m); if (v.length < 2) return "";
-  const a = v[v.length - 2], b = v[v.length - 1], d = b - a; if (!d) return ` <span class="ntr">=</span>`;
+/* Numbers: each figure is a small chart of its history (desk metric keeps up to 60 points, set only by Claude Code:
+   Diogo, 3 Nov 2026, "only Claude Code should manage that, not humans"). Green when it moves the good way (better: up
+   by default, "down" for figures where lower is good), red when the bad way; a dashed line for the target. */
+const nnum = (v) => { const x = parseFloat(String(v).replace(/[^0-9.,-]/g, "").replace(",", ".")); return isFinite(x) ? x : null; };
+const npts = (m) => (m.history || []).map((h) => ({ at: h.at, v: nnum(h.value) })).filter((p) => p.v !== null);
+const nday = (at) => { const d = new Date(at); return isNaN(d) ? "" : d.toLocaleDateString("en-GB", { day: "numeric", month: "short" }); };
+const nfmt = (x) => (Math.abs(x) >= 1000 ? Math.round(x).toLocaleString("en-GB") : String(Math.round(x * 10) / 10));
+function ndelta(m, p) {
+  if (p.length < 2) return "";
+  const a = p[p.length - 2].v, b = p[p.length - 1].v, d = b - a;
+  if (!d) return `<span class="ndelta">no change</span>`;
   const good = (d > 0) === (m.better !== "down"), pct = a ? Math.round((d / Math.abs(a)) * 100) : null;
-  return ` <span class="ntr ${good ? "up" : "dn"}">${d > 0 ? "▲" : "▼"} ${pct !== null ? Math.abs(pct) + "%" : Math.abs(d)}</span>`;
+  return `<span class="ndelta ${good ? "good" : "bad"}">${d > 0 ? "▲" : "▼"} ${pct !== null ? Math.abs(pct) + "%" : nfmt(Math.abs(d))} <span class="nvs">vs ${esc(nday(p[p.length - 2].at))}</span></span>`;
 }
-function nspark(m) {
-  const v = npts(m); if (v.length < 2) return "";
-  const lo = Math.min(...v), hi = Math.max(...v), w = 180, h = 34, span = hi - lo || 1;
-  const pts = v.map((x, i) => `${(i / (v.length - 1)) * w},${h - 3 - ((x - lo) / span) * (h - 6)}`).join(" ");
-  const delta = v[v.length - 1] - v[0], good = (delta > 0) === (m.better !== "down");
-  return `<svg class="nspark ${!delta ? "flat" : good ? "up" : "dn"}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts}"/></svg>`;
+function nchart(m, p) {
+  if (p.length < 2) return `<div class="nnochart">The line starts with the next figure.</div>`;
+  const W = 300, H = 92, L = 4, R = 4, T = 8, B = 8, t = nnum(m.target);
+  const vals = p.map((x) => x.v).concat(t !== null ? [t] : []);
+  let lo = Math.min(...vals), hi = Math.max(...vals); if (lo === hi) { lo -= 1; hi += 1; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const x = (i) => L + (i / (p.length - 1)) * (W - L - R), y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  const line = p.map((q, i) => `${x(i).toFixed(1)},${y(q.v).toFixed(1)}`).join(" ");
+  const area = `${x(0).toFixed(1)},${H - B} ${line} ${x(p.length - 1).toFixed(1)},${H - B}`;
+  const d = p[p.length - 1].v - p[0].v, cls = !d ? "flat" : (d > 0) === (m.better !== "down") ? "good" : "bad";
+  const last = p[p.length - 1], mn = Math.min(...p.map((q) => q.v)), mx = Math.max(...p.map((q) => q.v));
+  return `<svg class="nchart ${cls}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(m.label)} over time">
+    ${t !== null ? `<line class="ntarget" x1="${L}" x2="${W - R}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}"/>` : ""}
+    <polygon class="narea" points="${area}"/><polyline class="nline" points="${line}"/>
+    <circle class="ndot" cx="${x(p.length - 1).toFixed(1)}" cy="${y(last.v).toFixed(1)}" r="3"/></svg>
+  <div class="naxis"><span>${esc(nday(p[0].at))}</span><span>low ${esc(nfmt(mn))} · high ${esc(nfmt(mx))}${t !== null ? ` · target ${esc(m.target)}` : ""}</span><span>${esc(nday(last.at))}</span></div>`;
+}
+function ncard(m) {
+  const p = npts(m);
+  return `<div class="card ncard"><div class="nl">${esc(m.label)}</div><div class="nhead"><span class="nv">${esc(m.value)}</span>${ndelta(m, p)}</div>${nchart(m, p)}${m.note ? `<div class="meta nnote">${esc(m.note)}</div>` : ""}</div>`;
 }
 /* ---------- Numbers: a project's or client's figures, kept by its sessions (desk metric) ---------- */
 
 function renderNumbers() {
   const p = proj(), b = $("body"), ms = p.metrics || [];
-  let h = ms.length ? `<div class="ntiles">${ms.map((m) => `<div class="card ntile"><div class="nl">${esc(m.label)}</div><div class="nv">${esc(m.value)}${ntrend(m)}</div>${nspark(m)}<div class="meta">${m.target ? `<span class="pill">target ${esc(m.target)}</span>` : ""}<span>${esc(m.note || "")}${m.at ? ` · ${esc(clock(m.at))}${m.by ? " by " + esc(m.by) : ""}` : ""}</span></div><button class="linkbtn nrm" data-mrm="${esc(m.key)}">Remove</button></div>`).join("")}</div>`
-    : `<div class="empty">No numbers yet. Ask in any chat, e.g. "track our monthly reach and newsletter opens on the Numbers tab": Claude keeps them current from then on. Or add one here.</div>`;
-  h += `<form class="addform nform" id="nform"><input type="text" id="n-label" placeholder="What to count, e.g. Posts this month" maxlength="60" required><input type="text" id="n-value" placeholder="Value" maxlength="40" required><input type="text" id="n-target" placeholder="Target (optional)" maxlength="40"><button class="btn primary">Add number</button></form>`;
-  b.innerHTML = h;
-  b.querySelectorAll("[data-mrm]").forEach((x) => (x.onclick = async () => { await op("metric.remove", p.id, { key: x.dataset.mrm }).catch(() => {}); refresh(); }));
-  $("nform").onsubmit = async (e) => { e.preventDefault(); const label = $("n-label").value.trim(); await op("metric.set", p.id, { key: label, label, value: $("n-value").value, target: $("n-target").value || undefined }).catch(() => {}); refresh(); };
+  if (!ms.length) { b.innerHTML = `<div class="empty">No numbers yet. Ask in any chat, e.g. "track our monthly reach on the Numbers tab": Claude keeps them current from then on.</div>`; return; }
+  const groups = []; for (const m of ms) { const g = m.group || ""; let x = groups.find((y) => y.g === g); if (!x) groups.push((x = { g, ms: [] })); x.ms.push(m); }
+  b.innerHTML = groups.map((x) => `${x.g ? `<h3 class="ngroup">${esc(x.g)}</h3>` : ""}<div class="ngrid">${x.ms.map(ncard).join("")}</div>`).join("");
 }
 
 /* ---------- Sales: the leads, the outreach and their numbers (shared with the partner) ---------- */
