@@ -627,3 +627,7 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 .askbody a.btn{text-decoration:none;color:var(--ink)}
 .composer textarea{field-sizing:content;max-height:160px}
 .mtail{display:contents}
+/* The message list is laid out and painted on its own, so typing in the box below doesn't make the
+   browser redo a long chat on every key (3 Nov 2026, measured in Diogo's Chrome on the 625-message
+   Ads chat: 0.18 s per letter before, 0.04 s after). */
+.msgs{contain:strict}
