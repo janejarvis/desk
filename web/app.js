@@ -1348,7 +1348,7 @@ function renderNumbers() {
 S.leadsData = null; S.lead = null; S.leadFilter = "all"; S.laneOpen = {};
 async function loadLeads() { try { S.leadsData = await api("/api/leads"); } catch (e) { toast(e.message, true); } if (proj()?.kind === "sales" && ["leads", "outreach", "numbers"].includes(S.tab)) render(); }
 const LANE = { new: "todo", audit: "doing", contacted: "waiting", booked: "ongoing", held: "ongoing", proposal: "sent", trial: "sent", negotiation: "sent", won: "done", lost: "blocked" };
-const replied = (l) => (l.timeline || []).some((t) => /\bthey replied\b|^replied\b/i.test(t.text || "") && !/haven.t|if no|no reply/i.test(t.text || ""));
+const replied = (l) => (l.thread || []).some((m) => m.dir === "in") || (l.timeline || []).some((t) => /\bthey replied\b|^replied\b/i.test(t.text || "") && !/haven.t|if no|no reply/i.test(t.text || ""));
 const srcPill = (l, d) => { const k = l.source?.kind || "manual", name = d.sources[k] || k; return `<span class="pill ${k === "outbound" ? "src-ob" : k === "form" || k === "booking" ? "src-in" : ""}">${esc(name)}${l.source?.trade ? " · " + esc(l.source.trade) : ""}</span>`; };
 function needLeads() { if (!S.leadsData) { $("body").innerHTML = '<p class="hint">Loading the leads…</p>'; loadLeads(); return true; } return false; }
 
@@ -1381,6 +1381,20 @@ function renderLeads() {
 }
 async function leadSet(id, f) { try { await api("/api/lead", { op: "set", id, ...f }); await loadLeads(); } catch (e) { toast(e.message, true); } }
 
+// The email exchange with a lead, oldest first, the newest open: what outreach sent (l.emails), their
+// replies and our answers from the inboxes (l.thread, saved by the outreach bridge). Diogo, 5 Nov 2026:
+// "I need it clear on the lead panel".
+function leadThread(l) {
+  const norm = (x) => String(x || "").toLowerCase().replace(/^(re|fw|fwd|enc|res):\s*/g, "").trim();
+  const ours = (l.emails || []).filter((m) => m.state === "sent").map((m) => ({ at: m.at, dir: "out", subject: m.subject, text: m.text, by: "Outreach" }));
+  const th = (l.thread || []).map((m) => ({ ...m, by: m.dir === "out" ? (m.account || "").split("@")[0] : "" }));
+  // An outreach email also sits in the inbox's Sent: show it once.
+  const all = [...ours, ...th.filter((m) => !(m.dir === "out" && ours.some((o) => norm(o.subject) === norm(m.subject) && Math.abs(Date.parse(o.at) - Date.parse(m.at)) < 2 * 864e5)))].sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  if (!all.length) return `<div class="lthread none">No emails with them yet.</div>`;
+  const ins = all.filter((m) => m.dir === "in"), last = ins[ins.length - 1];
+  const head = ins.length ? `<b class="lrep">They replied ${ins.length === 1 ? "once" : ins.length + " times"}</b> · last ${esc(clock(last.at))}` : `<b>No reply yet</b>`;
+  return `<div class="lthread"><div class="lth">${head} · ${all.length} email${all.length === 1 ? "" : "s"}</div>${all.map((m, i) => `<details class="lmsg ${m.dir}"${i === all.length - 1 || (m.dir === "in" && m === last) ? " open" : ""}><summary><span class="lwho">${m.dir === "in" ? "They wrote" : "We sent" + (m.by ? ` · ${esc(m.by)}` : "")}</span><span class="lsub">${esc(m.subject || "(no subject)")}</span><span class="lwhen">${esc(clock(m.at))}</span></summary><div class="lbody">${esc(m.text || "(no text)")}</div></details>`).join("")}</div>`;
+}
 function leadDetail(l, d) {
   if (!l) return "";
   const SV = d.services, has = (k) => (l.services || []).includes(k);
@@ -1395,7 +1409,7 @@ function leadDetail(l, d) {
   <div class="lsv"><span>Wants</span>${Object.entries(SV).map(([k, n]) => `<button class="chip" data-sv="${k}" aria-pressed="${has(k)}">${esc(n)}</button>`).join("")}</div>
   <form class="lnext" id="lnext"><input id="lnext-t" placeholder="Next step" value="${esc(l.next?.text || "")}" maxlength="200"><input type="date" id="lnext-d" value="${esc(l.next?.due || "")}"><button class="btn">Save</button></form>`;
   for (const [i, a] of (l.audits || []).entries()) h += `<a class="lfile" href="/api/leadfile?id=${encodeURIComponent(l.id)}&n=${i}" target="_blank" rel="noopener">📄 ${esc(a.name)}${i === (l.audits.length - 1) && l.auditReads ? `<span>read ${l.auditReads}×</span>` : ""}</a>`;
-  if ((l.emails || []).length) h += `<details class="lmails"><summary>${l.emails.length} email${l.emails.length === 1 ? "" : "s"} sent</summary>${l.emails.map((m) => `<details class="lmail"><summary><b>${esc(m.subject || "(no subject)")}</b><span>${esc(clock(m.at))} · ${esc(m.state)}</span></summary><pre>${esc(m.text || "")}</pre></details>`).join("")}</details>`;
+  h += leadThread(l);
   h += `<ul class="mlist ltl">${(l.timeline || []).slice(-14).reverse().map((t) => `<li class="${t.kind === "next" ? "doing" : "hist"}"><span class="s"></span><span><span class="lwhen">${esc(clock(t.at))}</span> ${esc(t.text)}</span></li>`).join("")}</ul>
   <form class="lnote" id="lnoteform"><input id="lnote-t" placeholder="Add a note (a call, what they said…)" maxlength="600"><button class="btn">Add</button></form></aside>`;
   return h;

@@ -694,3 +694,18 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 .qopt.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .qopt small{font-size:11.5px;color:var(--ink-3)}.qopt.on small{color:rgba(255,255,255,.8)}
 .m.question .qhint{font-size:11.5px;color:var(--ink-3)}
+/* A lead's email thread on the Sales lead panel */
+.lthread{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.lthread.none{font-size:12.5px;color:var(--ink-3)}
+.lthread .lth{font-size:12.5px;color:var(--ink-3)}
+.lthread .lrep{color:var(--good,#1e8e3e)}
+.lmsg{border-radius:12px;padding:8px 10px;border:1px solid var(--hair);background:var(--glass-2)}
+.lmsg.in{background:var(--accent-soft);border-color:transparent;margin-right:18px}
+.lmsg.out{margin-left:18px}
+.lmsg summary{display:grid;grid-template-columns:1fr auto;gap:0 8px;cursor:pointer;list-style:none}
+.lmsg summary::-webkit-details-marker{display:none}
+.lmsg .lwho{font-size:11px;font-weight:600;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em}
+.lmsg.in .lwho{color:var(--accent)}
+.lmsg .lsub{grid-column:1;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lmsg .lwhen{grid-column:2;grid-row:1/3;align-self:center;font-size:11.5px;color:var(--ink-3)}
+.lmsg .lbody{margin-top:8px;font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink);max-height:420px;overflow:auto}
