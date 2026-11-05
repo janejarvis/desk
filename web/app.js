@@ -640,7 +640,7 @@ function renderChats(b = $("body")) {
       if (sec._mh !== pp.mh) { if (sec._mh && pp.mh.startsWith(sec._mh)) mt.insertAdjacentHTML("beforebegin", pp.mh.slice(sec._mh.length)); else { [...m.children].forEach((c) => c !== mt && c.remove()); mt.insertAdjacentHTML("beforebegin", pp.mh); } sec._mh = pp.mh; }
       if (sec._tail !== pp.tail) { mt.innerHTML = pp.tail; sec._tail = pp.tail; }
       const st = stateOf(x.s), live = S.stream[id]?.active, lab = sec.querySelector(".convhead .state");
-      if (lab) { lab.className = `state ${st}`; lab.textContent = st === "working" ? "Working" : st === "waiting" ? "New reply" : "Idle"; }
+      if (lab) { lab.className = `state ${st}`; lab.textContent = x.s.question ? "Asks you" : st === "working" ? "Working" : st === "waiting" ? "New reply" : "Idle"; }
       sec.classList.toggle("unread", st === "waiting"); sec.classList.toggle("focus", S.focus[key] === id && panes.length > 1);
       const form = sec.querySelector("[data-send]"), stop = form?.querySelector("[data-stop]");
       if (form && live && !stop) form.querySelector('button[aria-label="Send"]').insertAdjacentHTML("beforebegin", `<button type="button" class="btn stop" data-stop="${id}" aria-label="Stop" title="Stop">${I.stop}</button>`);
@@ -675,6 +675,7 @@ function paneHTML({ p: sp, s }, key) {
   let body = "";   // what follows the messages: refused steps, steps for Diogo, commands, the live reply
   for (const [i, d] of (s.denied || []).entries()) body += `<div class="m denied"><div class="dh"><b>Not allowed from the Desk</b><span>${esc(d.tool)} · ${esc(clock(d.at))}</span></div><div class="dd">${esc(d.detail)}</div>${d.command ? `<code class="dc">${esc(d.command.length > 300 ? d.command.slice(0, 300) + "…" : d.command)}</code>` : ""}<div class="dx">Steps that need your OK are refused when sent from the Desk.${d.command ? " Run it yourself, or tell the session how to go on." : " Tell the session how to go on."}</div><div class="db">${d.command ? `<button type="button" class="btn small" data-runit="${esc(s.id)}|${i}">Run it myself (!)</button>` : ""}<button type="button" class="linkbtn" data-undeny="${esc(sp.id)}|${esc(s.id)}|${i}">Dismiss</button></div></div>`;
   for (const a of s.asks || []) body += askCard(sp, s, a);
+  if (s.question?.questions?.length && s.mine !== false) body += questionCard(sp, s, s.question);
   for (const e of s.pendingShell || []) body += `<div class="m shell"><div class="sh-h">${e.ask ? `<b>${esc(e.ask)}</b>` : `<code>$ ${esc(e.cmd)}</code>`}<span>${e.state === "running" ? (e.ask ? "follow the window that opened…" : "running in Terminal…") : e.ask ? "done · the session carries on" : `exit ${e.code ?? "?"} · goes with your next message`}</span></div>${e.state === "done" && !e.ask ? `<pre>${esc(e.output || "(no output)")}</pre>` : ""}</div>`;
   // A job the session left running past its reply (`desk wait`): it shows here until it ends, then the session reports.
   if (!live?.active) for (const b of s.bg || []) body += `<div class="m claude streaming bgjob"><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">Working in the background · ${esc(b.what)} · since ${esc(clock(b.at))}</span></span><span class="bgnote">${esc(s.name)} will report here when it ends.</span></div>`;
@@ -685,12 +686,38 @@ function paneHTML({ p: sp, s }, key) {
   return `<section class="pane-c${S.focus[key] === s.id && S.panes[key].length > 1 ? " focus" : ""}${st === "waiting" ? " unread" : ""}" data-pane="${s.id}">
    <div class="convhead"><div class="l"><span class="sw" style="background:${sp.color}" title="${esc(label)}"></span>
      <input class="sname" data-rn="${s.id}" data-p="${sp.id}" id="sn-${s.id}" value="${esc(s.name)}" aria-label="Session name" maxlength="40" title="${esc(s.cwd)}"></div>
-     <div class="hr"><span class="state ${st}">${st === "working" ? "Working" : st === "waiting" ? "New reply" : "Idle"}</span><button class="x" data-close="${s.id}" aria-label="Close this pane" title="Close pane">×</button></div></div>
+     <div class="hr"><span class="state ${st}">${s.question ? "Asks you" : st === "working" ? "Working" : st === "waiting" ? "New reply" : "Idle"}</span><button class="x" data-close="${s.id}" aria-label="Close this pane" title="Close pane">×</button></div></div>
    <div class="msgs" data-for="${s.id}">${body}</div>
    <div class="helpers" data-helpers="${esc(s.id)}">${helpersHTML(s.id)}</div>
    <div class="chips" data-chips="${esc(s.id)}">${chipsHTML(s.id)}</div>
    ${s.mine === false ? `<div class="rofoot">${esc(s.owner)}'s session · it runs on ${esc(s.owner)}'s computer, so only ${esc(s.owner)} can write here. Start your own with + New session.</div></section>` : ""}${s.mine === false ? "" : `<form class="composer" data-send="${s.id}" data-p="${sp.id}"><button type="button" class="btn round clip" data-clip="${esc(s.id)}" aria-label="Attach files" title="Attach photos, documents, videos…">${I.clip}</button>${D.voice ? `<button type="button" class="btn round mic" data-mic="${esc(s.id)}" aria-label="Hold to talk" title="Hold to talk: speak, let go, and the words go into the box">${I.mic}</button>` : ""}<input type="file" multiple hidden data-file="${esc(s.id)}"><textarea id="say-${s.id}" rows="1" placeholder="Message ${esc(s.name)}…"></textarea>${live?.active ? `<button type="button" class="btn stop" data-stop="${s.id}" aria-label="Stop" title="Stop">${I.stop}</button>` : ""}<button class="btn primary" aria-label="Send" disabled>${I.send}</button></form></section>`}`;
 }
+/* ---------- Claude's questions (its AskUserQuestion tool), answered with buttons ----------
+   bin/claude-keeper.mjs holds the question while Diogo picks; one question with one choice sends on the
+   tap, several (or several choices) need Send answers. Typing a message instead answers it in words. */
+const qMulti = (q) => q.questions.length > 1 || q.questions.some((x) => x.multiSelect);
+function questionCard(sp, s, q) {
+  const sel = ((S.qsel ||= {})[s.id] ||= {});
+  const on = (x, o) => (x.multiSelect ? (sel[x.question] || []).includes(o.label) : sel[x.question] === o.label);
+  return `<div class="m question"><span class="qtop">${esc(s.name)} asks</span>` + q.questions.map((x, qi) => `<div class="qq">${x.header ? `<span class="qh">${esc(x.header)}</span>` : ""}<b>${esc(x.question)}</b>${x.multiSelect ? '<span class="qh">pick any</span>' : ""}<div class="qopts">${(x.options || []).map((o, oi) => `<button type="button" class="qopt${on(x, o) ? " on" : ""}" data-qopt="${esc(sp.id)}|${esc(s.id)}|${qi}|${oi}"><span>${esc(o.label)}</span>${o.description && o.description !== o.label ? `<small>${esc(o.description)}</small>` : ""}</button>`).join("")}</div></div>`).join("")
+    + (qMulti(q) ? `<div class="db"><button type="button" class="btn primary small" data-qsend="${esc(sp.id)}|${esc(s.id)}">Send answers</button></div>` : "") + `<span class="qhint">Or type your own answer in the box below.</span></div>`;
+}
+function pickAnswer(k) {
+  const [pid, sid, qi, oi] = k.split("|"), x = findS(sid); const q = x?.s.question; if (!q) return;
+  const qq = q.questions[+qi], o = qq.options[+oi], sel = ((S.qsel ||= {})[sid] ||= {});
+  if (qq.multiSelect) { const a = new Set(sel[qq.question] || []); a.has(o.label) ? a.delete(o.label) : a.add(o.label); sel[qq.question] = [...a]; }
+  else sel[qq.question] = o.label;
+  if (!qMulti(q)) return sendAnswers(pid, sid);
+  render();
+}
+async function sendAnswers(pid, sid) {
+  const x = findS(sid), q = x?.s.question; if (!q) return;
+  const sel = (S.qsel || {})[sid] || {}, answers = {};
+  for (const qq of q.questions) { const v = sel[qq.question]; if (!v || (Array.isArray(v) && !v.length)) return toast(`Pick an answer for: ${qq.question}`, true); answers[qq.question] = Array.isArray(v) ? v.join(", ") : v; }
+  try { await api("/api/answer", { project: pid, session: sid, request_id: q.request_id, answers }); delete S.qsel[sid]; x.s.question = null; render(); }
+  catch (e) { toast(e.message, true); refresh(); }
+}
+
 /* ---------- Steps only Diogo can do (`desk ask`): a card in the pane, and a pop-up when one is new ---------- */
 const askBtn = (a) => (a.cmd ? (a.kind === "login" ? "Sign in" : "Do it") : "Open it");
 function askCard(sp, s, a) {
@@ -1046,6 +1073,8 @@ function wireChats(p, key) {
   b.querySelectorAll("[data-pane]").forEach((x) => (x.onfocusin = () => { if (S.focus[key] !== x.dataset.pane) { S.focus[key] = x.dataset.pane; b.querySelectorAll(".pane-c").forEach((y) => y.classList.toggle("focus", y === x && S.panes[key].length > 1)); } }));
   wireHelpers(b);
   b.querySelectorAll("[data-runit]").forEach((x) => (x.onclick = () => { const [sid, i] = x.dataset.runit.split("|"); const d = findS(sid)?.s.denied?.[+i]; const ta = $("say-" + sid); if (d && ta) { ta.value = "! " + d.command; ta.dispatchEvent(new Event("input")); ta.focus(); } }));
+  b.querySelectorAll("[data-qopt]").forEach((x) => (x.onclick = () => pickAnswer(x.dataset.qopt)));
+  b.querySelectorAll("[data-qsend]").forEach((x) => (x.onclick = () => { const [pid, sid] = x.dataset.qsend.split("|"); sendAnswers(pid, sid); }));
   b.querySelectorAll("[data-ask]").forEach((x) => (x.onclick = () => { const [pid, sid, id, answer] = x.dataset.ask.split("|"); answerAsk(pid, sid, id, answer); }));
   b.querySelectorAll("[data-undeny]").forEach((x) => (x.onclick = async () => { const [pid, sid, i] = x.dataset.undeny.split("|"); const s = findS(sid)?.s; if (!s) return; await op("session.set", pid, { id: sid, denied: (s.denied || []).filter((_, k) => k !== +i) }).catch(() => {}); refresh(); }));
   b.querySelectorAll("[data-stop]").forEach((x) => (x.onclick = () => api("/api/stop", { session: x.dataset.stop }).catch((e) => toast(e.message, true))));

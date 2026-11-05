@@ -15,11 +15,20 @@ const DELAY = +(process.env.DESK_FAKE_DELAY || 50);
 out({ type: "system", subtype: "init", session_id: id, cwd: process.cwd() });
 
 let busy = Promise.resolve(), bg = 0;
+const answerWait = {};
 async function turn(input) {
   const cutoff = input.includes("CUTOFF") && !input.includes("When your reply ended");
   if (cutoff) out({ type: "system", subtype: "task_started", task_id: "t-fake", description: "Build the fake thing" });
   if (input.includes("BGTASK")) { const t = "t-bg" + ++bg; out({ type: "system", subtype: "task_started", task_id: t, description: "Fake background build" }); setTimeout(() => { busy = busy.then(async () => { out({ type: "system", subtype: "task_notification", task_id: t, status: "completed", summary: "Fake background build" }); await say("Background build finished."); }); }, +(process.env.DESK_FAKE_BG || 2000)); }
   if (input.includes("EMPTYFIRST")) out({ type: "result", subtype: "success", is_error: false, result: "", num_turns: 0, session_id: id });
+  if (input.includes("ASKQ")) { // asks a question with choices and waits for the answer (bin/claude-keeper.mjs)
+    const rid = "rq-" + Date.now(), tu = "tu-" + Date.now();
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id: tu, name: "AskUserQuestion", input: {} }] } });
+    out({ type: "control_request", request_id: rid, request: { subtype: "can_use_tool", tool_name: "AskUserQuestion", tool_use_id: tu, input: { questions: [{ question: "Which colour?", header: "Colour", options: [{ label: "Red", description: "Warm" }, { label: "Blue", description: "Cool" }], multiSelect: false }] } } });
+    const ans = await new Promise((r) => (answerWait[rid] = r));
+    out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: tu, content: "answered" }] } });
+    await say("You picked " + JSON.stringify(ans.updatedInput?.answers || {})); return;
+  }
   if (input.includes("SIGNEDOUT")) { out({ type: "result", subtype: "success", is_error: true, result: "Failed to authenticate: OAuth session expired and could not be refreshed", session_id: id }); return; }
   out({ type: "stream_event", parent_tool_use_id: null, event: { type: "content_block_start", content_block: { type: "tool_use", name: "Bash" } } });
   if (cutoff) { await say("Got it: " + input.slice(0, 40), false); out({ type: "system", subtype: "task_notification", task_id: "t-fake", status: "stopped", summary: "Build the fake thing" }); result(); return; }
@@ -34,7 +43,7 @@ const result = (text = "Got it") => out({ type: "result", subtype: "success", is
 
 if (a.includes("--input-format") && get("--input-format") === "stream-json") {
   const rl = createInterface({ input: process.stdin });
-  for await (const line of rl) { let o; try { o = JSON.parse(line); } catch { continue; } const c = o.message?.content; const text = typeof c === "string" ? c : ""; busy = busy.then(() => turn(text)); }
+  for await (const line of rl) { let o; try { o = JSON.parse(line); } catch { continue; } if (o.type === "control_response") { answerWait[o.response?.request_id]?.(o.response?.response || {}); continue; } const c = o.message?.content; const text = typeof c === "string" ? c : ""; busy = busy.then(() => turn(text)); }
   await busy;
 } else {
   let input = ""; for await (const c of process.stdin) input += c;

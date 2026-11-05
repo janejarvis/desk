@@ -12,7 +12,28 @@ const [cmd, ...args] = process.argv.slice(2);
 const IN = process.env.DESK_KEEPER_IN;
 let first = ""; for await (const c of process.stdin) first += c;
 
-const child = spawn(cmd, [...args, "--input-format", "stream-json"], { stdio: ["pipe", "inherit", "inherit"], env: process.env });
+// --permission-prompt-tool stdio: Claude Code asks us (control_request on its output) before a step that
+// needs a person, i.e. its question tool, AskUserQuestion. The Desk shows the question as buttons and the
+// answer comes back here as { "answer": { "request_id", "answers": { "<question>": "<label>" } } }.
+// Anything else it asks about is allowed: Desk runs may do everything (the project's own deny rules still apply).
+const child = spawn(cmd, [...args, "--input-format", "stream-json", "--permission-prompt-tool", "stdio"], { stdio: ["pipe", "pipe", "inherit"], env: process.env });
+const pending = new Map(); // request_id -> the tool input, while Diogo answers
+const reply = (request_id, response) => child.stdin.write(JSON.stringify({ type: "control_response", response: { subtype: "success", request_id, response } }) + "\n");
+let obuf = "";
+child.stdout.on("data", (d) => {
+  process.stdout.write(d);
+  obuf += d; let i;
+  while ((i = obuf.indexOf("\n")) >= 0) {
+    const l = obuf.slice(0, i); obuf = obuf.slice(i + 1);
+    if (!l.includes('"control_request"')) continue;
+    let o; try { o = JSON.parse(l); } catch { continue; }
+    if (o.type !== "control_request") continue;
+    const r = o.request || {};
+    if (r.subtype === "can_use_tool" && r.tool_name === "AskUserQuestion") pending.set(o.request_id, r.input || {});
+    else if (r.subtype === "can_use_tool") reply(o.request_id, { behavior: "allow", updatedInput: r.input || {} });
+    else reply(o.request_id, {});
+  }
+});
 child.on("error", (e) => { process.stderr.write(String(e.message) + "\n"); process.exit(1); });
 child.stdin.on("error", () => {});
 const say = (text) => child.stdin.write(JSON.stringify({ type: "user", message: { role: "user", content: text } }) + "\n");
@@ -28,7 +49,8 @@ const poll = setInterval(() => {
     const b = Buffer.alloc(size - off); readSync(fd, b, 0, b.length, off); off = size;
     for (const l of b.toString("utf8").split("\n")) {
       let o; try { o = JSON.parse(l); } catch { continue; }
-      if (o.close) close(); else if (!closed && o.text) say(o.text);
+      if (o.answer && pending.has(o.answer.request_id)) { const inp = pending.get(o.answer.request_id); pending.delete(o.answer.request_id); reply(o.answer.request_id, { behavior: "allow", updatedInput: { ...inp, answers: o.answer.answers || {} } }); }
+      else if (o.close) close(); else if (!closed && o.text) say(o.text);
     }
   } finally { closeSync(fd); }
 }, 300);

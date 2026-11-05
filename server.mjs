@@ -53,6 +53,7 @@ function sessionView(s, liveMap) {
   const lastAt = last ? Date.parse(last.at) || 0 : 0;
   let state = "idle";
   if (runner.isRunning(s.id) || l?.status === "busy" || (s.bg || []).length) state = "working";
+  if (s.question && runner.questionOf(s.id)) state = "waiting";
   else if (last?.who === "claude" && lastAt > (Date.parse(s.seenAt || "") || 0) && Date.now() - lastAt < 3 * 864e5) state = "waiting";
   return { ...s, cwd: tilde(s.cwd), state, terminal: !!l?.interactive, lastAt, mine: !s.owner || s.owner === ME, last: last ? { who: last.who, text: last.text.slice(0, 220), at: last.at } : null };
 }
@@ -161,10 +162,10 @@ const shellNote = (s) => {
 };
 
 // No Desk page open: tell Diogo with a plain Mac notification (the page shows its own when open).
-function macNotify(pid, sid, error) {
+function macNotify(pid, sid, error, text) {
   try {
     const p = load(pid), s = p.sessions.find((x) => x.id === sid || (x.previousIds || []).includes(sid));
-    const msg = error ? "Stopped with an error." : "Replied. Open the Desk to read it.";
+    const msg = text || (error ? "Stopped with an error." : "Replied. Open the Desk to read it.");
     if (desk.notify) return desk.notify("Desk · " + p.name, (s?.name ? s.name + ": " : "") + msg);
     if (MAC) execFile("osascript", ["-e", `display notification ${JSON.stringify(msg)} with title ${JSON.stringify("Desk · " + p.name)} subtitle ${JSON.stringify(s?.name || "")}`], () => {});
   } catch {}
@@ -182,6 +183,8 @@ function handler(pid, sid, wasNew, sent = "") {
     if (ev.type === "start") { streaming.set(cur, ""); if (wasNew) run("session.set", pid, { id: cur, started: true }); }
     if (ev.type === "id") { const old = cur; cur = ev.id; streaming.set(cur, streaming.get(old) || ""); streaming.delete(old); try { run("session.set", pid, { id: old, newId: cur }); } catch {} broadcast({ type: "renamed", from: old, to: cur }); return; }
     if (ev.type === "delta") streaming.set(cur, (streaming.get(cur) || "") + ev.text);
+    if (ev.type === "question") { try { run("session.set", pid, { id: cur, question: ev.question }); } catch {} if (!clients.size) macNotify(pid, cur, null, "asks you something. Open the Desk to answer."); }
+    if (ev.type === "answered" || ev.type === "done") { try { if (load(pid).sessions.find((x) => x.id === cur)?.question) run("session.set", pid, { id: cur, question: null }); } catch {} }
     if (ev.type === "denied") try { run("session.set", pid, { id: cur, addDenied: ev.items.map((d) => ({ ...d, at: new Date().toISOString() })) }); } catch {}
     if (ev.type === "message") { const t = streaming.get(cur); if (t && !t.endsWith("\n\n")) streaming.set(cur, t + "\n\n"); }
     if (ev.type === "done" && !clients.size) macNotify(pid, cur, ev.error);
@@ -543,6 +546,7 @@ const routes = {
   "POST /api/shell": (b) => shell(b.project, b.session, b.cmd),
   "GET /api/morning": () => { const m = readMorning(); return m ? { ...m, items: m.items.map((x) => ({ ...x, done: (load(x.project).todos || []).find((t) => t.id === x.id)?.status === "done" })) } : null; },
   "POST /api/morning": (b) => morningRun({ force: true, send: b.send !== false }),
+  "POST /api/answer": (b) => { if (!runner.answer(b.session, b.request_id, b.answers || {})) throw Object.assign(new Error("That question was already answered or the chat stopped."), { user: true }); try { run("session.set", b.project, { id: b.session, question: null }); } catch {} return { ok: true }; },
   "POST /api/ask": (b) => answerAsk(b.project, b.session, b.id, b.answer),
   "POST /api/askinput": (b) => askInput(b.run, b.text),
   "POST /api/askcancel": (b) => askCancel(b.run),
