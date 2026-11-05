@@ -820,9 +820,9 @@ async function showMorning() {
   let m; try { m = await api("/api/morning"); } catch { return; }
   S.morning = m;
   if (!m || m.date !== iso(TODAY())) return;
-  let seen = ""; try { seen = localStorage.getItem("morning-seen") || ""; } catch {}
+  let seen = ""; try { seen = localStorage.getItem("today-seen") || ""; } catch {}
   if (seen === m.date) { if (S.view === "today") render(); return; }
-  try { localStorage.setItem("morning-seen", m.date); } catch {}
+  try { localStorage.setItem("today-seen", m.date); } catch {}
   S.view = "today"; render();
 }
 setTimeout(() => showMorning(), 1500);
