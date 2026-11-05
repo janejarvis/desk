@@ -656,3 +656,29 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 .mline.mdone{opacity:.45}.mline.mdone .mt{text-decoration:line-through}
 .askbody .mfoot{font-size:12px;color:var(--ink-3);margin-top:6px}
 .morningbtn{padding:0;color:inherit;text-decoration:none}
+/* Today: what waits on Diogo, with Done and Chat on each card; chats open beside the list */
+.ritem.todayitem .pav.sun{background:var(--soft);color:var(--ink);font-size:15px}
+.top .tsub{color:var(--ink-3);font-size:13px}
+.todaywrap{display:flex;gap:14px;height:100%;min-height:0}
+#tlistwrap{flex:0 0 min(440px,42%);min-width:0;overflow:auto}
+#tchats{flex:1;min-width:0;display:flex;flex-direction:column}
+#tchats .chatwrap{height:100%}
+#tchats .slist{display:none}
+.tlist{display:flex;flex-direction:column;gap:6px;padding:2px 2px 16px}
+.tsec{font:500 11px/1 var(--font);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);padding:12px 4px 4px}
+.trow{display:flex;gap:10px;align-items:flex-start;background:var(--glass-2);border:1px solid var(--hair);border-radius:14px;padding:10px 12px}
+.trow.sel{border-color:var(--accent);background:var(--accent-soft)}
+.trow .tck{margin-top:3px;accent-color:var(--accent)}
+.trow .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.trow .tp{font-size:11.5px;color:var(--ink-3);display:flex;align-items:center;gap:6px}
+.trow .tp .sw{width:8px;height:8px;border-radius:50%}
+.trow .tt{font-size:13.5px;line-height:1.35;color:var(--ink)}
+.trow .tw{font-size:12px;color:var(--ink-3)}
+.trow .tw i{font-style:normal}.trow .tw i.late{color:var(--bad)}
+.trow .myes{color:var(--warn);font-weight:600}
+.trow .tb{display:flex;gap:6px;flex-shrink:0}
+.tbar{position:sticky;top:0;z-index:2;display:flex;gap:8px;align-items:center;background:var(--glass-2);border:1px solid var(--accent);border-radius:14px;padding:8px 12px;margin-bottom:4px}
+.tbar b{font-size:13px;margin-right:auto}
+.toast .tundo{margin-left:8px;color:inherit}
+@media (max-width:900px){.todaywrap{flex-direction:column}#tlistwrap{flex:none;max-height:none}#tchats{min-height:60vh}}
+.toast .tundo{pointer-events:auto}

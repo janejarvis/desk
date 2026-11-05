@@ -60,6 +60,12 @@ async function api(path, body) {
 const op = (o, project, fields) => api("/api/op", { op: o, project, ...fields }).catch((e) => { toast(e.message, true); throw e; });
 
 let toastT;
+// A toast with an Undo button (Today's Done), shown a little longer.
+function toastUndo(msg, undo) {
+  const t = $("toast"); t.innerHTML = `${esc(msg)} <button class="linkbtn tundo">Undo</button>`; t.className = "toast show";
+  t.querySelector(".tundo").onclick = () => { t.className = "toast"; undo(); };
+  clearTimeout(toastT); toastT = setTimeout(() => (t.className = "toast"), 6000);
+}
 function toast(msg, err) { const t = $("toast"); t.textContent = msg; t.className = "toast show" + (err ? " err" : ""); clearTimeout(toastT); toastT = setTimeout(() => (t.className = "toast"), err ? 5000 : 2200); }
 
 // ---- state ----
@@ -70,8 +76,8 @@ const save = () => { try { localStorage.setItem("desk-ui", JSON.stringify({ view
 
 const P = () => D.projects;
 const proj = () => P().find((p) => p.id === S.view);
-const scopeP = () => (S.view === "all" ? P() : [proj()].filter(Boolean));
-const inTrack = (x) => S.view === "all" || S.track === "all" || x.track === S.track;
+const scopeP = () => (S.view === "all" || S.view === "today" ? P() : [proj()].filter(Boolean));
+const inTrack = (x) => S.view === "all" || S.view === "today" || S.track === "all" || x.track === S.track;
 // A whole conversation is shown (it never gets cut), so each reply is turned into HTML once and kept.
 const mdDone = new Map();
 const mdKept = (t) => { let h = mdDone.get(t); if (h === undefined) { h = md(t); mdDone.set(t, h); } return h; };
@@ -88,7 +94,7 @@ const stateOf = (s) => (S.stream[s.id]?.active || (s.state === "idle" && (S.agen
 async function refresh() {
   try { D = await api("/api/state"); if (D.me) ME = D.me; if ($("ver")) $("ver").textContent = D.version ? "v" + D.version : ""; $("offline")?.remove(); }
   catch { if (!$("offline")) document.body.insertAdjacentHTML("beforeend", '<div class="offline" id="offline">The Desk server isn\'t running. Start it with: desk open</div>'); return; }
-  if (!proj()) { S.view = P()[0]?.id || "all"; S.track = "all"; }
+  if (!proj() && S.view !== "today") { S.view = P()[0]?.id || "all"; S.track = "all"; }
   if (proj() && S.track !== "all" && !proj().tracks.some((t) => t.id === S.track)) S.track = "all";
   checkNeeds();
   render();
@@ -219,7 +225,7 @@ function render() {
 
 const kindOf = (p) => p.kind || "project";
 // The sidebar's order, top to bottom: Projects, then Sales, then Clients. Up/down (keys and STEER) follow it.
-const railOrder = () => ["project", "sales", "client"].flatMap((k) => P().filter((p) => kindOf(p) === k));
+const railOrder = () => [{ id: "today", name: "Today" }, ...["project", "sales", "client"].flatMap((k) => P().filter((p) => kindOf(p) === k))];
 function railItem(p, unread) {
   const cur = S.view === p.id;
   let h = `<button class="ritem" aria-current="${cur}" data-go="${p.id}" title="${esc(p.name)}"><span class="pav${unread(p.sessions) ? " unread" : ""}${p.logo ? " logo" : ""}" style="background:${p.color}">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : esc(p.kind === "sales" ? "€" : p.name[0])}</span><span class="nm">${esc(p.name)}</span><span class="live">${p.kind === "sales" ? "" : p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;
@@ -233,7 +239,8 @@ function renderRail() {
   const unread = (ss) => ss.some((s) => stateOf(s) === "waiting");
   const newBtn = (kind, label) => `<button class="ritem newproj" data-new="${kind}" title="${label}"><span class="pav plus">+</span><span class="nm">${label}</span></button>`;
   const shared = D.sync?.shared || P().some((p) => p.shared) || D.sync?.ok === false;
-  let h = `<div class="rail-label">Projects</div>` + P().filter((p) => kindOf(p) === "project").map((p) => railItem(p, unread)).join("") + newBtn("project", "New project");
+  let h = `<button class="ritem todayitem" aria-current="${S.view === "today"}" data-go="today" title="Today: what waits on you"><span class="pav sun">☀</span><span class="nm">Today</span></button><div class="rsep"></div>`;
+  h += `<div class="rail-label">Projects</div>` + P().filter((p) => kindOf(p) === "project").map((p) => railItem(p, unread)).join("") + newBtn("project", "New project");
   if (shared) {
     const sales = P().filter((p) => kindOf(p) === "sales");
     if (sales.length) h += `<div class="rsep"></div><div class="rail-label">Sales<span class="rshared">shared</span></div>` + sales.map((p) => railItem(p, unread)).join("");
@@ -246,10 +253,10 @@ function renderRail() {
   // Until the first sync works, the username box and Connect are always there (2 Nov 2026: João only saw "Syncing…").
   const connect = `<br><input class="ghuser" id="ghuser" placeholder="Your GitHub username" value="${esc(S.ghDraft ?? sy.github ?? "")}"><button class="linkbtn" id="syncnow">Connect</button>`;
   const syncLine = !shared ? "" : sy.ok === true ? `<br>Sales and Clients synced with ${other} · ${esc(clock(sy.at))}` : sy.ok === false ? `<br><span class="syncerr">${esc(sy.error || "Sales and Clients aren't syncing.")}</span>` + connect : `<br>${sy.busy ? "Syncing Sales and Clients…" : "Sales and Clients aren't connected yet."}` + connect;
-  $("railfoot").innerHTML = nbtn + `<button class="linkbtn morningbtn" id="morningbtn" title="This morning's list: what waits on you"><b>${fmt(new Date().toISOString())}</b></button><br>${all.filter((s) => stateOf(s) === "working").length} working · ${all.filter((s) => stateOf(s) === "waiting").length} new replies` + syncLine;
+  $("railfoot").innerHTML = nbtn + `<button class="linkbtn morningbtn" id="morningbtn" title="Today: what waits on you"><b>${fmt(new Date().toISOString())}</b></button><br>${all.filter((s) => stateOf(s) === "working").length} working · ${all.filter((s) => stateOf(s) === "waiting").length} new replies` + syncLine;
   $("notifyon")?.addEventListener("click", () => Notification.requestPermission().then(() => render()));
   $("ghuser")?.addEventListener("input", (e) => { S.ghDraft = e.target.value; });   // what's typed survives the sidebar redrawing
-  $("morningbtn").onclick = () => showMorning(true);
+  $("morningbtn").onclick = () => { S.view = "today"; render(); };
   $("syncnow")?.addEventListener("click", async (e) => { const github = $("ghuser")?.value.trim(); if (!github) return toast("Type your GitHub username first (the account that accepted the invite).", true); e.target.textContent = "Connecting… (a GitHub sign-in window may open)"; e.target.disabled = true; try { await api("/api/sync", { github }); } catch {} refresh(); });
   r.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { if (S.view !== b.dataset.go) { S.view = b.dataset.go; S.track = "all"; S.sheet = false; S.filter = "all"; S.msForm = null; S.lead = null; if (proj()?.kind === "sales") S.tab = "leads"; else if (["leads", "outreach"].includes(S.tab)) S.tab = "chats"; } render(); }));
   r.querySelectorAll("[data-track]").forEach((b) => (b.onclick = () => { S.track = S.track === b.dataset.track ? "all" : b.dataset.track; S.msForm = null; render(); }));
@@ -260,6 +267,7 @@ function renderRail() {
 const PTABS = [["chats", "Chats"], ["roadmap", "Roadmap"], ["board", "Board"], ["numbers", "Numbers"], ["meetings", "Meetings"], ["files", "Files"]];
 const SALES_TABS = [["leads", "Leads"], ["outreach", "Outreach"], ["numbers", "Numbers"], ["files", "Files"]]; // no Chats (Diogo, 2 Nov 2026)
 function renderMain() {
+  if (S.view === "today") return renderToday();
   const p = proj();
   const tabs = p?.kind === "sales" ? SALES_TABS : p ? PTABS : PTABS.filter(([k]) => k !== "numbers");
   if (!tabs.some(([k]) => k === S.tab)) S.tab = tabs[0][0];
@@ -564,6 +572,7 @@ function wireMeetings(p, cur) {
 const paneKey = () => S.view + "|" + S.track;
 const byState = (a, b) => ORDER[stateOf(a.s)] - ORDER[stateOf(b.s)] || (b.s.lastAt || 0) - (a.s.lastAt || 0);
 function defaultPanes() {
+  if (S.view === "today") return []; // Today opens chats only from its cards
   const p = proj(), list = allSessions();
   if (p) {
     const trs = S.track === "all" ? p.tracks : p.tracks.filter((t) => t.id === S.track);
@@ -590,8 +599,8 @@ function ensureMsgs(s, p) {
   }).catch(() => { S.msgs[s.id] = { at: s.lastAt, list: have?.list || [] }; });
 }
 
-function renderChats() {
-  const b = $("body"), p = proj(), list = allSessions(), key = paneKey();
+function renderChats(b = $("body")) {
+  const p = proj(), list = allSessions(), key = paneKey();
   if (!S.panes[key]) S.panes[key] = defaultPanes();
   // A remembered pane can point at a session that has since moved on (continued as a copy):
   // follow it by its earlier id, and fall back to the default panes if none are left.
@@ -650,7 +659,8 @@ function renderChats() {
       <label for="ns-dir">Folder<input id="ns-dir" value="${esc((p || P()[0])?.folder || "~")}"></label>
       <div class="r"><button type="button" class="btn" id="ns-cancel">Cancel</button><button class="btn primary">Start session</button></div></form>`;
   }
-  if (!panes.length) h += `<div class="nochat">${list.length ? "Pick sessions from the list to open them side by side." : "No sessions here yet.<br>Start one to work on something in parallel."}</div>`;
+  if (!panes.length && S.view === "today") h += `<div class="nochat">Press Chat on a card, or tick a few and press Chat about these: their chat opens here, next to your list.</div>`;
+  else if (!panes.length) h += `<div class="nochat">${list.length ? "Pick sessions from the list to open them side by side." : "No sessions here yet.<br>Start one to work on something in parallel."}</div>`;
   else h += `<div class="panes">${panes.map((id) => paneHTML(findS(id), key)).join("")}</div>`;
   b.innerHTML = h + `</div></div>`;
   b.querySelector(".chatwrap")._sig = sig; const sl0 = b.querySelector(".slist"); if (sl0) sl0._html = listH;
@@ -732,20 +742,88 @@ function askRunPop() {
   if (r.done) setTimeout(() => { if (S.askRun === r) { $("askpop")?.remove(); S.askRun = null; } }, r.code === 0 ? 1800 : 6000);
 }
 
-/* ---------- The morning message (lib/morning.mjs): once a day, only what waits on Diogo ---------- */
-async function showMorning(force = false) {
+/* ---------- Today: what waits on Diogo, across projects (Diogo, 5 Nov 2026) ----------
+   It stays on the page (a closed pop-up lost the list). Each card has Done and Chat; ticking several
+   and pressing "Chat about these" opens their chats next to the list, each with its cards in the box.
+   Same order as the morning message (lib/morning.mjs): late (oldest first), this week, then undated. */
+S.tsel = new Set();
+function todayCards() {
+  const d = iso(TODAY()), days = (a) => Math.round((Date.parse(a) - Date.parse(d)) / 864e5);
+  const xs = P().filter((p) => kindOf(p) !== "sales").flatMap((p) => p.todos.filter((t) => needsMe(t) && t.status !== "ongoing").map((t) => ({ p, t })));
+  const late = xs.filter((x) => x.t.due && x.t.due < d).sort((a, b) => a.t.due.localeCompare(b.t.due));
+  const soon = xs.filter((x) => x.t.due && x.t.due >= d && days(x.t.due) <= 8).sort((a, b) => a.t.due.localeCompare(b.t.due));
+  const rest = xs.filter((x) => !late.includes(x) && !soon.includes(x)).sort((a, b) => (a.t.due ? 1 : 0) - (b.t.due ? 1 : 0) || (a.t.priority || 2) - (b.t.priority || 2) || String(a.t.createdAt || "").localeCompare(String(b.t.createdAt || "")));
+  return { late, soon, rest, d };
+}
+// The chat a card belongs to: its own, else its track's chat (as the morning run does).
+function cardChat(p, t) {
+  const own = t.session && p.sessions.find((s) => (s.id === t.session || (s.previousIds || []).includes(t.session)) && s.mine !== false);
+  return own || p.sessions.find((s) => s.track === t.track && s.mine !== false) || p.sessions.find((s) => s.mine !== false) || null;
+}
+function todayRow({ p, t }, d) {
+  const k = `${p.id}|${t.id}`, late = t.due && t.due < d ? Math.round((Date.parse(d) - Date.parse(t.due)) / 864e5) : 0;
+  const when = late ? `<i class="late">${late} day${late === 1 ? "" : "s"} late</i>` : t.due ? `<i>due ${esc(fmtShort(t.due))}</i>` : "";
+  return `<div class="trow${S.tsel.has(k) ? " sel" : ""}" data-tk="${esc(k)}"><input type="checkbox" class="tck" data-tck="${esc(k)}" aria-label="Select" ${S.tsel.has(k) ? "checked" : ""}>
+    <div class="tx"><span class="tp"><span class="sw" style="background:${p.color}"></span>${esc(p.name)} · ${esc(trName(p, t.track))}</span><span class="tt">${esc(t.title)}</span><span class="tw">${[when, t.reach ? '<b class="myes">your yes</b>' : "", t.status === "blocked" && t.why ? esc(t.why) : ""].filter(Boolean).join(" · ")}</span></div>
+    <div class="tb"><button class="btn small" data-tchat="${esc(k)}" title="Talk to its chat about it">Chat</button><button class="btn small" data-tdone="${esc(k)}" title="Mark it done">Done</button></div></div>`;
+}
+function renderToday() {
+  const { late, soon, rest, d } = todayCards();
+  const n = late.length + soon.length + rest.length;
+  for (const k of [...S.tsel]) { const [pid, id] = k.split("|"); if (!P().find((p) => p.id === pid)?.todos.some((t) => t.id === id && needsMe(t))) S.tsel.delete(k); }
+  const sec = (title, xs) => (xs.length ? `<div class="tsec">${title}</div>` + xs.map((x) => todayRow(x, d)).join("") : "");
+  const bar = S.tsel.size ? `<div class="tbar"><b>${S.tsel.size} selected</b><button class="btn primary small" id="tchatsel">Chat about these</button><button class="btn small" id="tdonesel">Done</button><button class="linkbtn" id="tclear">Clear</button></div>` : "";
+  const list = `<div class="tlist">${bar}${n ? sec("Late", late) + sec("This week", soon) + sec("No date", rest) : '<div class="empty">Nothing waits on you. ☀</div>'}${S.morning?.sent?.length && S.morning.date === d ? `<p class="mfoot">This morning, late work went back to ${S.morning.sent.length} chat${S.morning.sent.length === 1 ? "" : "s"}.</p>` : ""}</div>`;
+  const top = `<div class="top"><h1>Today</h1><span class="tsub">${n ? `${n} thing${n === 1 ? "" : "s"} wait on you` : ""}</span></div><div class="body chat-body today-body" id="body"><div class="todaywrap"><div id="tlistwrap"></div><div id="tchats"></div></div></div>`;
+  if ($("main")._top !== top || !$("tchats")) { $("main").innerHTML = top; $("main")._top = top; }
+  $("tlistwrap").innerHTML = list;
+  renderChats($("tchats"));
+  wireToday();
+}
+function wireToday() {
+  const L = $("tlistwrap"), find = (k) => { const [pid, id] = k.split("|"); const p = P().find((x) => x.id === pid); return { p, t: p?.todos.find((x) => x.id === id) }; };
+  L.querySelectorAll("[data-tck]").forEach((c) => (c.onchange = () => { c.checked ? S.tsel.add(c.dataset.tck) : S.tsel.delete(c.dataset.tck); render(); }));
+  L.querySelectorAll("[data-tchat]").forEach((b) => (b.onclick = () => chatAbout([b.dataset.tchat])));
+  L.querySelectorAll("[data-tdone]").forEach((b) => (b.onclick = () => doneCards([b.dataset.tdone])));
+  if ($("tchatsel")) $("tchatsel").onclick = () => chatAbout([...S.tsel]);
+  if ($("tdonesel")) $("tdonesel").onclick = () => doneCards([...S.tsel]);
+  if ($("tclear")) $("tclear").onclick = () => { S.tsel.clear(); render(); };
+  async function doneCards(keys) {
+    const was = keys.map((k) => ({ k, ...find(k) })).filter((x) => x.t);
+    for (const x of was) await op("todo.set", x.p.id, { id: x.t.id, status: "done" }).catch((e) => toast(e.message, true));
+    for (const k of keys) S.tsel.delete(k);
+    await refresh();
+    toastUndo(`${was.length === 1 ? "Done: " + was[0].t.title : was.length + " cards done"}`, async () => { for (const x of was) await op("todo.set", x.p.id, { id: x.t.id, status: x.t.status, ...(x.t.status === "waiting" ? { waitingOn: x.t.waitingOn } : {}) }).catch(() => {}); refresh(); });
+  }
+  // Each chat gets the cards that belong to it, in its message box, ready to add a word and send.
+  function chatAbout(keys) {
+    const by = new Map();
+    for (const k of keys) { const { p, t } = find(k); if (!t) continue; const s = cardChat(p, t); if (!s) { toast(`${p.name} has no chat on this computer for “${t.title}”.`, true); continue; } (by.get(s.id) || by.set(s.id, []).get(s.id)).push(t); }
+    if (!by.size) return;
+    const key = paneKey();
+    for (const [sid, ts] of by) {
+      const text = (ts.length === 1 ? `About this card on the board: [${ts[0].id}] ${ts[0].title}` : `About these cards on the board:\n${ts.map((t) => `- [${t.id}] ${t.title}`).join("\n")}`) + "\n\n";
+      let cur = ""; try { cur = sessionStorage.getItem("draft-" + sid) || ""; } catch {}
+      const next = cur.includes(text.trim()) ? cur : cur ? cur.trimEnd() + "\n\n" + text : text;
+      try { sessionStorage.setItem("draft-" + sid, next); } catch {}
+      const ta = $("say-" + sid); if (ta) { ta.value = next; ta.dispatchEvent(new Event("input")); }
+      const ps = (S.panes[key] ||= []);
+      if (!ps.includes(sid)) { if (ps.length >= 3) ps.shift(); ps.push(sid); }
+      S.focus[key] = sid;
+    }
+    S.tsel.clear(); render();
+    const first = [...by.keys()][0]; setTimeout(() => { const ta = $("say-" + first); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }, 50);
+  }
+}
+// The morning opens Today once a day (no pop-up: closing it lost the list).
+async function showMorning() {
   let m; try { m = await api("/api/morning"); } catch { return; }
-  const today = iso(TODAY());
-  if (!m || (!force && m.date !== today)) { if (force) toast("No morning list yet today: it comes at 8:00."); return; }
+  S.morning = m;
+  if (!m || m.date !== iso(TODAY())) return;
   let seen = ""; try { seen = localStorage.getItem("morning-seen") || ""; } catch {}
-  if (!force && seen === m.date) return;
-  if (!force && ($("askpop") || $("viewer"))) return;
+  if (seen === m.date) { if (S.view === "today") render(); return; }
   try { localStorage.setItem("morning-seen", m.date); } catch {}
-  const when = (x) => x.kind === "late" ? `${x.late} day${x.late === 1 ? "" : "s"} late` : x.due ? `due ${fmtShort(x.due)}` : "";
-  const line = (x) => `<button class="mline${x.done ? " mdone" : ""}" data-mgo="${esc(x.project)}"><span class="mp">${esc(x.projectName)}</span><span class="mt">${esc(x.title)}</span><span class="mw">${[when(x) ? `<i class="${x.kind}">${esc(when(x))}</i>` : "", x.reach ? '<b class="myes">your yes</b>' : ""].filter(Boolean).join(" · ")}</span></button>`;
-  const head = m.total ? `${m.total === 1 ? "1 thing waits" : `${Math.min(m.total, m.items.length)} things wait`} on you${m.more ? ` (${m.more} more on the boards)` : ""}` : "Nothing waits on you today.";
-  const pop = askPop(`<div class="vhead"><div class="vt"><b>Good morning</b><span>${esc(fmt(m.date))}</span></div><button class="x" data-close-pop aria-label="Close">×</button></div><div class="askbody morning"><p class="mh">${esc(head)}</p>${m.items.map(line).join("")}${m.sent?.length ? `<p class="mfoot">Late work went back to ${m.sent.length} chat${m.sent.length === 1 ? "" : "s"} this morning.</p>` : ""}</div>`, "Good morning");
-  pop.querySelectorAll("[data-mgo]").forEach((b) => (b.onclick = () => { S.view = b.dataset.mgo; S.track = "all"; S.tab = "board"; S.filter = "me"; pop.remove(); render(); }));
+  S.view = "today"; render();
 }
 setTimeout(() => showMorning(), 1500);
 window.addEventListener("focus", () => showMorning());
