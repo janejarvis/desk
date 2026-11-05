@@ -34,7 +34,7 @@ const daysSince = (s) => Math.floor((Date.now() - new Date(s)) / 864e5);
 const CYCLE = { daily: 1, weekly: 7, monthly: 31 };
 const ongoingLate = (t) => t.status === "ongoing" && (!t.lastDone || daysSince(t.lastDone) >= (CYCLE[t.every] || 7) + (t.every === "daily" ? 0 : 1));
 const dueState = (t) => { if (!t.due || ["done", "sent", "ongoing"].includes(t.status)) return ""; const d = (new Date(t.due + "T00:00:00") - TODAY()) / 864e5; return d < 0 ? "over" : d <= 3 ? "soon" : ""; };
-const needsMe = (t) => (t.status === "waiting" && t.waitingOn === ME) || (t.owner === ME && !["done", "sent"].includes(t.status));
+const needsMe = (t) => (t.status === "waiting" && t.waitingOn === ME) || (t.owner === ME && !["done", "sent"].includes(t.status)) || (t.reach && ["todo", "doing", "blocked"].includes(t.status)); // reach: only Diogo's yes starts it
 const initials = (n) => n.split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "·";
 
 // Claude writes markdown; show it as it reads. Escaped first, so nothing in it becomes HTML.
@@ -103,6 +103,7 @@ function connect() {
     let ev; try { ev = JSON.parse(e.data); } catch { return; }
     if (ev.type === "state") soon();
     else if (ev.type === "leads") { if (proj()?.kind === "sales") loadLeads(); }
+    else if (ev.type === "morning") showMorning();
     else if (ev.type === "steer") steerOwner = ev.owner;
     else if (ev.type === "askrun") { if (S.askRun?.id === ev.run.id) { const hidden = !$("askpop"); S.askRun = ev.run; if (!hidden || ev.run.done || ev.run.waiting) askRunPop(); } }
     else if (ev.type === "renamed") {
@@ -245,9 +246,10 @@ function renderRail() {
   // Until the first sync works, the username box and Connect are always there (2 Nov 2026: João only saw "Syncing…").
   const connect = `<br><input class="ghuser" id="ghuser" placeholder="Your GitHub username" value="${esc(S.ghDraft ?? sy.github ?? "")}"><button class="linkbtn" id="syncnow">Connect</button>`;
   const syncLine = !shared ? "" : sy.ok === true ? `<br>Sales and Clients synced with ${other} · ${esc(clock(sy.at))}` : sy.ok === false ? `<br><span class="syncerr">${esc(sy.error || "Sales and Clients aren't syncing.")}</span>` + connect : `<br>${sy.busy ? "Syncing Sales and Clients…" : "Sales and Clients aren't connected yet."}` + connect;
-  $("railfoot").innerHTML = nbtn + `<b>${fmt(new Date().toISOString())}</b><br>${all.filter((s) => stateOf(s) === "working").length} working · ${all.filter((s) => stateOf(s) === "waiting").length} new replies` + syncLine;
+  $("railfoot").innerHTML = nbtn + `<button class="linkbtn morningbtn" id="morningbtn" title="This morning's list: what waits on you"><b>${fmt(new Date().toISOString())}</b></button><br>${all.filter((s) => stateOf(s) === "working").length} working · ${all.filter((s) => stateOf(s) === "waiting").length} new replies` + syncLine;
   $("notifyon")?.addEventListener("click", () => Notification.requestPermission().then(() => render()));
   $("ghuser")?.addEventListener("input", (e) => { S.ghDraft = e.target.value; });   // what's typed survives the sidebar redrawing
+  $("morningbtn").onclick = () => showMorning(true);
   $("syncnow")?.addEventListener("click", async (e) => { const github = $("ghuser")?.value.trim(); if (!github) return toast("Type your GitHub username first (the account that accepted the invite).", true); e.target.textContent = "Connecting… (a GitHub sign-in window may open)"; e.target.disabled = true; try { await api("/api/sync", { github }); } catch {} refresh(); });
   r.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { if (S.view !== b.dataset.go) { S.view = b.dataset.go; S.track = "all"; S.sheet = false; S.filter = "all"; S.msForm = null; S.lead = null; if (proj()?.kind === "sales") S.tab = "leads"; else if (["leads", "outreach"].includes(S.tab)) S.tab = "chats"; } render(); }));
   r.querySelectorAll("[data-track]").forEach((b) => (b.onclick = () => { S.track = S.track === b.dataset.track ? "all" : b.dataset.track; S.msForm = null; render(); }));
@@ -729,6 +731,24 @@ function askRunPop() {
   if ($("askcancel")) $("askcancel").onclick = () => api("/api/askcancel", { run: r.id }).catch(() => {});
   if (r.done) setTimeout(() => { if (S.askRun === r) { $("askpop")?.remove(); S.askRun = null; } }, r.code === 0 ? 1800 : 6000);
 }
+
+/* ---------- The morning message (lib/morning.mjs): once a day, only what waits on Diogo ---------- */
+async function showMorning(force = false) {
+  let m; try { m = await api("/api/morning"); } catch { return; }
+  const today = iso(TODAY());
+  if (!m || (!force && m.date !== today)) { if (force) toast("No morning list yet today: it comes at 8:00."); return; }
+  let seen = ""; try { seen = localStorage.getItem("morning-seen") || ""; } catch {}
+  if (!force && seen === m.date) return;
+  if (!force && ($("askpop") || $("viewer"))) return;
+  try { localStorage.setItem("morning-seen", m.date); } catch {}
+  const when = (x) => x.kind === "late" ? `${x.late} day${x.late === 1 ? "" : "s"} late` : x.due ? `due ${fmtShort(x.due)}` : "";
+  const line = (x) => `<button class="mline${x.done ? " mdone" : ""}" data-mgo="${esc(x.project)}"><span class="mp">${esc(x.projectName)}</span><span class="mt">${esc(x.title)}</span><span class="mw">${[when(x) ? `<i class="${x.kind}">${esc(when(x))}</i>` : "", x.reach ? '<b class="myes">your yes</b>' : ""].filter(Boolean).join(" · ")}</span></button>`;
+  const head = m.total ? `${m.total === 1 ? "1 thing waits" : `${Math.min(m.total, m.items.length)} things wait`} on you${m.more ? ` (${m.more} more on the boards)` : ""}` : "Nothing waits on you today.";
+  const pop = askPop(`<div class="vhead"><div class="vt"><b>Good morning</b><span>${esc(fmt(m.date))}</span></div><button class="x" data-close-pop aria-label="Close">×</button></div><div class="askbody morning"><p class="mh">${esc(head)}</p>${m.items.map(line).join("")}${m.sent?.length ? `<p class="mfoot">Late work went back to ${m.sent.length} chat${m.sent.length === 1 ? "" : "s"} this morning.</p>` : ""}</div>`, "Good morning");
+  pop.querySelectorAll("[data-mgo]").forEach((b) => (b.onclick = () => { S.view = b.dataset.mgo; S.track = "all"; S.tab = "board"; S.filter = "me"; pop.remove(); render(); }));
+}
+setTimeout(() => showMorning(), 1500);
+window.addEventListener("focus", () => showMorning());
 
 /* ---------- Helper agents (subagents) at the bottom of each pane ---------- */
 const dur = (a, b) => { const s = Math.max(0, Math.round((new Date(b || Date.now()) - new Date(a)) / 1000)); if (!a || isNaN(s)) return ""; return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`; };

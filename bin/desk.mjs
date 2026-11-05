@@ -17,6 +17,10 @@ To-dos (statuses: ${STATUSES.join(", ")})
                 [--status S] [--waiting NAME] [--owner NAME] [--note TEXT]
   desk todo <id> <status> [--why TEXT] [--waiting NAME] [--to NAME] [--note TEXT]
   desk todo set <id> [--title] [--status] [--p] [--due] [--milestone] [--track] [--note] ...
+    --due YYYY-MM-DD   when it's next to be done (every "later" step gets one)
+    --owner NAME       who does it (Claude, Diogo, João, a client…)
+    --check "<what to measure and the threshold>"   for a step that waits on a condition
+    --reach yes        it reaches a client or a phone: only Diogo's yes starts it
   desk todo remove <id>
     blocked needs --why; waiting takes --waiting <who>; sent takes --to <who>.
   Ongoing duties (never finished, repeat --every daily|weekly|monthly):
@@ -134,6 +138,7 @@ function fail(msg) { console.error(msg); process.exit(1); }
 const todoFields = () => ({
   title: flags.title, status: flags.status, priority: flags.p ?? flags.priority, due: flags.due, owner: flags.owner,
   note: flags.note, why: flags.why, waitingOn: flags.waiting, sentTo: flags.to, milestone: flags.milestone, every: flags.every,
+  check: flags.check, reach: flags.reach,
 });
 const strip = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
 const say = (msg) => console.log(msg);
@@ -202,7 +207,7 @@ try {
     try { execFileSync("launchctl", ["kickstart", "-k", `gui/${process.getuid()}/com.blendd.desk`], { stdio: "ignore" }); say("Desk restarted."); }
     catch { fail("The Desk isn't installed as a login item. Run: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.blendd.desk.plist"); } }
   else if (cmd === "todo") {
-    if (a1 === "add") { const pid = project(); const t = run("todo.add", pid, { ...strip(todoFields()), title: a2, track: track(pid), source: "claude" }); say(`Added [${t.id}] ${t.title} (${t.status})`); }
+    if (a1 === "add") { const pid = project(); const t = run("todo.add", pid, { ...strip(todoFields()), title: a2, track: track(pid), source: "claude", session: mine()?.s.id || process.env.DESK_SESSION || "" }); say(`Added [${t.id}] ${t.title} (${t.status})${t.due ? "" : t.status === "ongoing" || t.status === "done" ? "" : ". It has no date: if it's a \"later\" step, give it one with desk todo set " + t.id + " --due YYYY-MM-DD"}`); }
     else if (a1 === "tick") { const t = run("todo.tick", owner("todos", a2), { id: a2 }); say(`[${t.id}] ${t.title}: done again ${t.lastDone.slice(0, 10)}`); }
     else if (a1 === "remove") { run("todo.remove", owner("todos", a2), { id: a2 }); say("Removed."); }
     else if (a1 === "set") { const pid = owner("todos", a2); const t = run("todo.set", pid, { ...strip(todoFields()), id: a2, track: flags.track }); say(`[${t.id}] ${t.title}: ${t.status}`); }

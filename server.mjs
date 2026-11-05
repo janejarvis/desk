@@ -23,6 +23,7 @@ const MAC = process.platform === "darwin", WIN = process.platform === "win32";
 import { artifactsIn, readFrom } from "./lib/files.mjs";
 import * as runner from "./lib/runner.mjs";
 import { withShims } from "./lib/accounts.mjs";
+import * as morningMod from "./lib/morning.mjs";
 
 const PORT = +(process.env.DESK_PORT || 4848);
 const WEB = join(ROOT, "web");
@@ -205,6 +206,30 @@ runner.onQueued((pid, sid, text) => {
   if (!s) return null;
   return { job: { session: { ...s, cwd: expand(s.cwd), started: true }, project: p, trackName: p.tracks.find((t) => t.id === s.track)?.name || "", text, fork: false }, on: handler(pid, s.id, false, text) };
 });
+// ---- the morning run (lib/morning.mjs): every day at 8:00, or at start if 8:00 passed without it ----
+const MORNING = join(DATA, "..", "morning.json"); // next to the projects (tests with their own DESK_DATA get their own)
+const readMorning = () => { try { return JSON.parse(readFileSync(MORNING, "utf8")); } catch { return null; } };
+function morningRun({ force = false, send = true } = {}) {
+  const d = morningMod.today(), last = readMorning();
+  if (!force && last?.date === d) return last;
+  const r = morningMod.plan(d);
+  const out = { ...r, at: new Date().toISOString(), sent: [] };
+  // One message per chat, a few minutes apart, so the Mac isn't asked to run every chat at once.
+  if (send) r.chats.forEach((c, i) => {
+    out.sent.push({ project: c.project, session: c.session, name: c.name, due: c.due.length, undated: c.undated.length });
+    setTimeout(() => { try { sendTo(c.project, c.session, morningMod.chatMessage(c, d), { auto: true }); } catch {} }, i * 3 * 60e3);
+  });
+  mkdirSync(dirname(MORNING), { recursive: true }); writeFileSync(MORNING, JSON.stringify(out, null, 2) + "\n");
+  if (out.total) {
+    const msg = `${out.total} thing${out.total === 1 ? "" : "s"} wait on you. ${out.items.slice(0, 2).map((x) => x.title).join(" · ")}`;
+    if (desk.notify) desk.notify("Desk · Good morning", msg.slice(0, 180));
+    else if (MAC) execFile("osascript", ["-e", `display notification ${JSON.stringify(msg.slice(0, 180))} with title "Desk · Good morning"`], () => {});
+  }
+  broadcast({ type: "morning" });
+  return out;
+}
+if (process.env.DESK_MORNING !== "off") setInterval(() => { const n = new Date(); if (n.getHours() >= 8 && readMorning()?.date !== morningMod.today()) morningRun(); }, 60e3).unref?.();
+
 const autoGo = new Map(); // session -> automatic "carry on" messages sent in a row
 function sendTo(pid, sid, text, { auto = false } = {}) {
   if (!auto) autoGo.delete(sid);
@@ -516,6 +541,8 @@ const routes = {
   "POST /api/briefopen": (b) => { execFileSync("open", [expand(ensureBrief(load(b.project)))]); return { ok: true }; },
   "GET /api/brief": (q) => { const p = load(q.get("project")); const path = expand(ensureBrief(p)); return { path: tilde(path), text: existsSync(path) ? readFileSync(path, "utf8").slice(0, 200000) : "" }; },
   "POST /api/shell": (b) => shell(b.project, b.session, b.cmd),
+  "GET /api/morning": () => { const m = readMorning(); return m ? { ...m, items: m.items.map((x) => ({ ...x, done: (load(x.project).todos || []).find((t) => t.id === x.id)?.status === "done" })) } : null; },
+  "POST /api/morning": (b) => morningRun({ force: true, send: b.send !== false }),
   "POST /api/ask": (b) => answerAsk(b.project, b.session, b.id, b.answer),
   "POST /api/askinput": (b) => askInput(b.run, b.text),
   "POST /api/askcancel": (b) => askCancel(b.run),
