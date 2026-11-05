@@ -45,6 +45,9 @@ for (const o of crm) {
   // What was done on the Desk is never undone by a refresh: its history entries (marked desk: true) are
   // kept, and a stage, owner or next step set on the Desk after Oversight's last change wins.
   const was = have.get(id), desk = (was?.timeline || []).filter((t) => t.desk);
+  // The email thread (their replies and our answers, from the inboxes: ~/Projects/outreach-bridge/threads.mjs)
+  // lives only on the Desk lead: a refresh keeps it.
+  if (was?.thread) { l.thread = was.thread; if (was.lastReplyAt) l.lastReplyAt = was.lastReplyAt; }
   if (was && desk.length) {
     l.timeline = [...(o.timeline || []), ...desk].sort((a, b) => (a.at || "").localeCompare(b.at || ""));
     const last = (k) => desk.filter((t) => t.kind === k).map((t) => t.at).sort().pop() || "";
