@@ -197,7 +197,9 @@ function handler(pid, sid, wasNew, sent = "") {
     }
     if (ev.type === "done" && ev.error && SIGNED_OUT.test(ev.error)) {
       ev = { ...ev, error: "Claude is signed out on this computer." };
-      try { addAsk(pid, cur, { title: "Sign in to Claude again", why: "Claude's sign-in on this computer ran out, so it couldn't reply. A window opens: sign in and click Authorize. Your message is sent again after.", cmd: "claude auth login", resend: sent, kind: "login" }); } catch {}
+      // On the Mac the fix is the Desk's own long-lived key (bin/desk-claude-token.py), not another everyday sign-in.
+      const mk = MAC ? { title: "Give the Desk its own Claude key", why: "Claude's sign-in ran out, so it couldn't reply. This makes the Desk a long-lived key of its own, so it stops asking every day. Your browser opens: sign in and click Authorize. Your message is sent again after.", cmd: `python3 ${JSON.stringify(join(ROOT, "bin", "desk-claude-token.py"))}` } : { title: "Sign in to Claude again", why: "Claude's sign-in on this computer ran out, so it couldn't reply. A window opens: sign in and click Authorize. Your message is sent again after.", cmd: "claude auth login" };
+      try { addAsk(pid, cur, { ...mk, resend: sent, kind: "login" }); } catch {}
     }
     broadcast({ ...ev, type: "stream", kind: ev.type, session: cur });
     if (ev.type === "done" || ev.type === "start") check();
