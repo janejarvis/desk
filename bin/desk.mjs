@@ -41,6 +41,8 @@ Files (what you made for ${ME}: documents, PDFs, images, print files, artifacts)
 
 Numbers (the Numbers tab)
   desk metric set <name> <value> [--label "<plain label>"] [--target T] [--note TEXT] [--better up|down] [--at YYYY-MM-DD] [--group "<name>"]
+                [--view <file id>]   a page from the Files tab shown full width under the figure ("" removes it);
+  desk metric set <name> --view <file id>      attach (or with "" remove) the page without adding a figure
   desk metric remove <name>                   desk metrics   list them
 
 Sales (only in the Sales area)
@@ -299,7 +301,7 @@ try {
   } else if (cmd === "metric" || cmd === "metrics") {
     const pid = project();
     if (cmd === "metrics" || !a1) { const p = load(pid); for (const m of p.metrics || []) say(`  ${m.key.padEnd(22)} ${String(m.value).padEnd(10)} ${m.label}${m.target ? ` (target ${m.target})` : ""}${m.note ? ` · ${m.note}` : ""}`); if (!(p.metrics || []).length) say("No numbers yet."); }
-    else if (a1 === "set") { const m = run("metric.set", pid, { key: a2, value: pos[3], label: flags.label, note: flags.note, target: flags.target, better: flags.better, at: flags.at, group: flags.group }); say(`${m.label}: ${m.value}`); }
+    else if (a1 === "set") { const m = run("metric.set", pid, { key: a2, value: pos[3], label: flags.label, note: flags.note, target: flags.target, better: flags.better, at: flags.at, group: flags.group, view: flags.view }); say(`${m.label}: ${m.value}`); }
     else if (a1 === "remove") { run("metric.remove", pid, { key: a2 }); say("Removed."); }
     else fail("Try: desk metric set <name> <value> · desk metric remove <name> · desk metrics");
   } else if (cmd === "leads" || cmd === "lead") {

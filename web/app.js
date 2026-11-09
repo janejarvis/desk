@@ -1363,7 +1363,9 @@ function nchart(m, p) {
   <div class="naxis"><span>${esc(nday(p[0].at))}</span><span>low ${esc(nfmt(mn))} · high ${esc(nfmt(mx))}${t !== null ? ` · target ${esc(m.target)}` : ""}</span><span>${esc(nday(last.at))}</span></div>`;
 }
 function ncard(m) {
-  const p = npts(m);
+  const p = npts(m), v = m.view && (proj().files || []).find((f) => f.id === m.view && f.path);
+  if (v) return `<div class="card ncard nwide"><div class="nl">${esc(m.label)}</div><div class="nhead"><span class="nv">${esc(m.value)}</span>${ndelta(m, p)}</div>`
+    + `<iframe class="nview" src="${fsrc(proj(), v)}" title="${esc(v.title || m.label)}" loading="lazy"></iframe>${m.note ? `<div class="meta nnote">${esc(m.note)}</div>` : ""}</div>`;
   return `<div class="card ncard"><div class="nl">${esc(m.label)}</div><div class="nhead"><span class="nv">${esc(m.value)}</span>${ndelta(m, p)}</div>${nchart(m, p)}${m.note ? `<div class="meta nnote">${esc(m.note)}</div>` : ""}</div>`;
 }
 /* ---------- Numbers: a project's or client's figures, kept by its sessions (desk metric) ---------- */

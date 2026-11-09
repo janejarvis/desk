@@ -605,6 +605,7 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 /* Numbers */
 .ngroup{font-size:13px;font-weight:600;color:var(--ink-2);margin:18px 2px 8px}.ngroup:first-child{margin-top:0}
 .ngrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-bottom:8px}
+.ncard.nwide{grid-column:1/-1}.nview{display:block;width:100%;height:min(640px,70vh);border:0;border-radius:12px;background:#fff;margin:4px 0 2px}
 .ncard .nl{color:var(--ink-2);font-size:12px}.nhead{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:4px 0 6px}
 .ncard .nv{font-size:26px;font-weight:600;letter-spacing:-.02em}.ndelta{font-size:13px;font-weight:600;color:var(--ink-2)}
 .ndelta.good{color:var(--good)}.ndelta.bad{color:var(--bad)}.nvs{font-weight:400;color:var(--ink-3)}
