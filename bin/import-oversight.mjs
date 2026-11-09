@@ -10,7 +10,9 @@ import { SHARED, update, expand } from "../lib/store.mjs";
 import { createHash } from "node:crypto";
 import * as leads from "../lib/leads.mjs";
 
-const OV = process.argv[2] || join(homedir(), "PACE-projects", "Oversight", "oversight-data");
+// Outreach's data now lives in its own service (~/Projects/outreach/data, 9 Nov 2026, the Blendd Outreach chat);
+// the old Oversight folder is only used while that doesn't exist yet. The outreach worker passes the folder itself.
+const OV = process.argv[2] || [join(homedir(), "Projects", "outreach", "data"), join(homedir(), "PACE-projects", "Oversight", "oversight-data")].find((d) => existsSync(d));
 const C = join(OV, "clients", "blendd-2");
 const json = (f, d = null) => { try { return JSON.parse(readFileSync(f, "utf8")); } catch { return d; } };
 const OWNER = { diogo: "Diogo", joao: "João" };
