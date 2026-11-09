@@ -91,12 +91,26 @@ const people = (p) => [...new Set([ME, ...(p?.todos || []).flatMap((t) => [t.wai
 // A session counts as working while it replies, or while one of its helpers is still running.
 const stateOf = (s) => (S.stream[s.id]?.active || (s.state === "idle" && (S.agents[s.id] || []).some((a) => a.state === "running")) ? "working" : s.state);
 
+// The page reloads itself when its own files changed (an update), once they've been still for 10 s and you're
+// not in the middle of typing; drafts are kept (sessionStorage). 9 Nov 2026: a window ran the old page for days.
+let webAt, reloadT = null;
+function watchWeb(stamp) {
+  if (!stamp) return; if (webAt === undefined) { webAt = stamp; return; }
+  if (stamp === webAt) return;
+  webAt = stamp; clearTimeout(reloadT);
+  reloadT = setTimeout(function go() {
+    const a = document.activeElement, typing = a && /^(TEXTAREA|INPUT|SELECT)$/.test(a.tagName) && (a.value || "").length;
+    if (typing || $("askpop") || $("viewer")) { reloadT = setTimeout(go, 5000); return; }
+    location.reload();
+  }, 10000);
+}
 async function refresh() {
   try { D = await api("/api/state"); if (D.me) ME = D.me; if ($("ver")) $("ver").textContent = D.version ? "v" + D.version : ""; $("offline")?.remove(); }
   catch { if (!$("offline")) document.body.insertAdjacentHTML("beforeend", '<div class="offline" id="offline">The Desk server isn\'t running. Start it with: desk open</div>'); return; }
   if (!proj() && S.view !== "today") { S.view = P()[0]?.id || "all"; S.track = "all"; }
   if (proj() && S.track !== "all" && !proj().tracks.some((t) => t.id === S.track)) S.track = "all";
   checkNeeds();
+  watchWeb(D.web);
   render();
   checkAsks();
 }

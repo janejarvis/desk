@@ -58,9 +58,12 @@ function sessionView(s, liveMap) {
   return { ...s, cwd: tilde(s.cwd), state, terminal: !!l?.interactive, lastAt, mine: !s.owner || s.owner === ME, last: last ? { who: last.who, text: last.text.slice(0, 220), at: last.at } : null };
 }
 
+// When the page's own files last changed: an open page reloads itself on a change (9 Nov 2026: a Desk window kept
+// running the old page after an update, so a new button "didn't work").
+const webStamp = () => { let t = 0; for (const f of ["app.js", "style.css", "index.html"]) try { t = Math.max(t, statSync(join(ROOT, "web", f)).mtimeMs); } catch {} return Math.round(t); };
 function state() {
   const liveMap = live();
-  return { me: ME, version: VERSION, sync: { ...sync.status, github: sync.githubUser(), shared: leadsDb.ready() || loadAll().some((p) => p.shared) }, voice: VOICE.ok,
+  return { me: ME, version: VERSION, web: webStamp(), sync: { ...sync.status, github: sync.githubUser(), shared: leadsDb.ready() || loadAll().some((p) => p.shared) }, voice: VOICE.ok,
     projects: loadAll().map((p) => ({ ...p, kind: p.kind || "project", folder: tilde(p.folder), sessions: p.sessions.map((s) => sessionView(s, liveMap)) })) };
 }
 
