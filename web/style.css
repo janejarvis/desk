@@ -709,3 +709,4 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 .lmsg .lsub{grid-column:1;font-size:13px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lmsg .lwhen{grid-column:2;grid-row:1/3;align-self:center;font-size:11.5px;color:var(--ink-3)}
 .lmsg .lbody{margin-top:8px;font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink);max-height:420px;overflow:auto}
+.chip .edit.del{font-size:14px;line-height:1;margin-left:2px}

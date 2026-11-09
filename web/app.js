@@ -289,13 +289,30 @@ function renderMain() {
 
 function trackChip(p, t) {
   const on = p.tracks.length === 1 || S.track === t.id;
-  return `<button class="chip" data-tr="${t.id}" aria-pressed="${on && p.tracks.length > 1}"><span>${esc(t.name)}</span>${on ? `<span class="edit" role="button" tabindex="0" aria-label="Rename track ${esc(t.name)}" data-rename="${t.id}">${I.pen}</span>` : ""}</button>`;
+  return `<button class="chip" data-tr="${t.id}" aria-pressed="${on && p.tracks.length > 1}"><span>${esc(t.name)}</span>${on ? `<span class="edit" role="button" tabindex="0" aria-label="Rename track ${esc(t.name)}" data-rename="${t.id}">${I.pen}</span>${p.tracks.length > 1 ? `<span class="edit del" role="button" tabindex="0" aria-label="Delete track ${esc(t.name)}" title="Delete this track" data-deltrack="${t.id}">×</span>` : ""}` : ""}</button>`;
 }
 function wireTracks(p) {
   const m = $("main");
   m.querySelectorAll("[data-tr]").forEach((b) => (b.onclick = (e) => { if (e.target.closest("[data-rename]") || e.target.tagName === "INPUT") return; S.track = b.dataset.tr; S.msForm = null; render(); }));
   m.querySelectorAll("[data-rename]").forEach((el) => { const go = (e) => { e.stopPropagation(); startRename(p, el.dataset.rename, el.closest(".chip")); }; el.onclick = go; el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(e); } }; });
+  m.querySelectorAll("[data-deltrack]").forEach((el) => { const go = (e) => { e.stopPropagation(); deleteTrack(p, el.dataset.deltrack); }; el.onclick = go; el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(e); } }; });
   $("addtrack").onclick = async () => { const t = (await op("track.add", p.id, { name: "New track" })).result; await refresh(); S.track = t.id; render(); const c = document.querySelector(`.chip[data-tr="${t.id}"]`); if (c) startRename(proj(), t.id, c); };
+}
+// Delete a track (Diogo, 9 Nov 2026): its cards, milestones, meetings and files go to the track picked here;
+// its chats leave the Desk, their conversations staying on this computer (lib/ops.mjs track.remove).
+function deleteTrack(p, id) {
+  const t = p.tracks.find((x) => x.id === id); if (!t) return;
+  const others = p.tracks.filter((x) => x.id !== id), n = (k) => (p[k] || []).filter((x) => x.track === id).length;
+  const chats = p.sessions.filter((s) => s.track === id);
+  if (chats.some((s) => stateOf(s) === "working")) return toast(`${t.name}'s chat is replying: wait until it's done, then delete the track.`, true);
+  const what = [[n("todos"), "card"], [n("milestones"), "milestone"], [n("meetings"), "meeting"], [n("files"), "file"]].filter(([c]) => c).map(([c, w]) => `${c} ${w}${c === 1 ? "" : "s"}`).join(", ");
+  const pop = askPop(`<div class="vhead"><div class="vt"><b>Delete the ${esc(t.name)} track?</b><span>${esc(p.name)}</span></div><button class="x" data-close-pop aria-label="Close">×</button></div><div class="askbody">
+    <p>${what ? `Its ${esc(what)} move to:` : "Nothing is on it but its chat."}</p>${what ? `<select class="lsel" id="trto">${others.map((x) => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")}</select>` : ""}
+    ${chats.length ? `<p class="mfoot">Its chat${chats.length === 1 ? "" : "s"} (${esc(chats.map((s) => s.name).join(", "))}) leave${chats.length === 1 ? "s" : ""} the Desk; the conversation stays on this computer.</p>` : ""}
+    <div class="db"><button type="button" class="btn primary" id="trdel">Delete track</button><button type="button" class="linkbtn" data-close-pop>Cancel</button></div></div>`, "Delete track");
+  $("trdel").onclick = async () => {
+    try { const r = (await op("track.remove", p.id, { id, to: $("trto")?.value || others[0].id })).result; pop.remove(); if (S.track === id) S.track = "all"; await refresh(); toast(`Deleted ${r.removed}${what ? ` · moved to ${r.to}` : ""}.`); } catch {}
+  };
 }
 function startRename(p, id, chip) {
   const t = p.tracks.find((x) => x.id === id); if (!t || !chip) return;
