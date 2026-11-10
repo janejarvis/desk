@@ -727,8 +727,11 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
   -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
   animation:ring 1.8s linear infinite}
 @keyframes ring{to{--ring:360deg}}
-.pavw.ready::before{content:"";position:absolute;inset:-4px;border-radius:12px;border:2px solid var(--alert);pointer-events:none;animation:readyin .5s var(--ease,ease) both}
-.pavw.ready::after{content:"";position:absolute;top:-6px;right:-6px;width:11px;height:11px;border-radius:50%;background:var(--alert);box-shadow:0 0 0 2px var(--glass-2,#fff);pointer-events:none;animation:readyin .5s var(--ease,ease) both}
+/* The ring is the icon's own outline (drawn crisp on every side), and the pop-in ends with no transform left on it:
+   a ring held at scale(1) after the animation was drawn heavier on its left edge (10 Nov 2026). */
+.pavw.ready .pav{outline:2px solid var(--alert);outline-offset:2px;animation:readyring .45s ease-out backwards}
+@keyframes readyring{from{outline-color:transparent;outline-offset:6px}}
+.pavw.ready::after{content:"";position:absolute;top:-6px;right:-6px;width:11px;height:11px;border-radius:50%;background:var(--alert);box-shadow:0 0 0 2px var(--glass-2,#fff);pointer-events:none;animation:readyin .5s ease-out backwards}
 @keyframes readyin{0%{opacity:0;transform:scale(.6)}60%{opacity:1;transform:scale(1.08)}100%{opacity:1;transform:scale(1)}}
-.pav.unread,.pav.working{outline:none;animation:none}
-@media (prefers-reduced-motion:reduce){.pavw.working::after{animation:none;background:var(--accent)}.pavw.ready::before,.pavw.ready::after{animation:none}}
+.pav.unread,.pav.working{animation:none}
+@media (prefers-reduced-motion:reduce){.pavw.working::after{animation:none;background:var(--accent)}.pavw.ready .pav,.pavw.ready::after{animation:none}}
