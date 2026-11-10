@@ -52,7 +52,7 @@ function sessionView(s, liveMap) {
   const last = msgs[msgs.length - 1];
   const lastAt = last ? Date.parse(last.at) || 0 : 0;
   let state = "idle";
-  if (runner.isRunning(s.id) || l?.status === "busy" || (s.bg || []).length) state = "working";
+  if (runner.isBusy(s.id) || l?.status === "busy" || (s.bg || []).length) state = "working";
   if (s.question && runner.questionOf(s.id)) state = "waiting";
   else if (last?.who === "claude" && lastAt > (Date.parse(s.seenAt || "") || 0) && Date.now() - lastAt < 3 * 864e5) state = "waiting";
   return { ...s, cwd: tilde(s.cwd), state, terminal: !!l?.interactive, lastAt, mine: !s.owner || s.owner === ME, last: last ? { who: last.who, text: last.text.slice(0, 220), at: last.at } : null };
