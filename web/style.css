@@ -717,3 +717,18 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 @keyframes pulse-work{0%{box-shadow:0 0 0 0 rgba(10,132,255,.85)}70%{box-shadow:0 0 0 9px rgba(10,132,255,0)}100%{box-shadow:0 0 0 0 rgba(10,132,255,0)}}
 .pav.working{outline:2.5px solid var(--accent);outline-offset:2px;animation:pulse-work 1.4s infinite}
 @media (prefers-reduced-motion:reduce){.pav.working{animation:none}}
+
+/* Sidebar icons (Diogo, 10 Nov 2026): working = a thin blue arc quietly circling the icon; ready to read = a steady
+   orange ring with a dot, which stays until the reply is read. Replaces the two pulses. */
+@property --ring{syntax:"<angle>";inherits:false;initial-value:0deg}
+.pavw{position:relative;display:grid;flex:none;border-radius:11px}
+.pavw.working::after{content:"";position:absolute;inset:-4px;border-radius:12px;padding:2px;pointer-events:none;
+  background:conic-gradient(from var(--ring),rgba(10,132,255,.14) 0 62%,var(--accent) 100%);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
+  animation:ring 1.8s linear infinite}
+@keyframes ring{to{--ring:360deg}}
+.pavw.ready::before{content:"";position:absolute;inset:-4px;border-radius:12px;border:2px solid var(--alert);pointer-events:none;animation:readyin .5s var(--ease,ease) both}
+.pavw.ready::after{content:"";position:absolute;top:-6px;right:-6px;width:11px;height:11px;border-radius:50%;background:var(--alert);box-shadow:0 0 0 2px var(--glass-2,#fff);pointer-events:none;animation:readyin .5s var(--ease,ease) both}
+@keyframes readyin{0%{opacity:0;transform:scale(.6)}60%{opacity:1;transform:scale(1.08)}100%{opacity:1;transform:scale(1)}}
+.pav.unread,.pav.working{outline:none;animation:none}
+@media (prefers-reduced-motion:reduce){.pavw.working::after{animation:none;background:var(--accent)}.pavw.ready::before,.pavw.ready::after{animation:none}}

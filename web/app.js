@@ -242,7 +242,7 @@ const kindOf = (p) => p.kind || "project";
 const railOrder = () => [{ id: "today", name: "Today" }, ...["project", "sales", "client"].flatMap((k) => P().filter((p) => kindOf(p) === k))];
 function railItem(p, unread) {
   const cur = S.view === p.id;
-  let h = `<button class="ritem" aria-current="${cur}" data-go="${p.id}" title="${esc(p.name)}"><span class="pav${unread(p.sessions) ? " unread" : p.sessions.some((s) => stateOf(s) === "working") ? " working" : ""}${p.logo ? " logo" : ""}" style="background:${p.color}">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : esc(p.kind === "sales" ? "€" : p.name[0])}</span><span class="nm">${esc(p.name)}</span><span class="live">${p.kind === "sales" ? "" : p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;
+  let h = `<button class="ritem" aria-current="${cur}" data-go="${p.id}" title="${esc(p.name)}"><span class="pavw${unread(p.sessions) ? " ready" : p.sessions.some((s) => stateOf(s) === "working") ? " working" : ""}" title="${unread(p.sessions) ? "A reply is waiting for you" : p.sessions.some((s) => stateOf(s) === "working") ? "Working…" : ""}"><span class="pav${p.logo ? " logo" : ""}" style="background:${p.color}">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : esc(p.kind === "sales" ? "€" : p.name[0])}</span></span><span class="nm">${esc(p.name)}</span><span class="live">${p.kind === "sales" ? "" : p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;
   // No track list under the project here: just projects (Diogo, 3 Nov 2026). Tracks are the chips at the top.
   return h;
 }
