@@ -89,7 +89,9 @@ const allMeetings = () => scopeP().flatMap((p) => p.meetings.filter(inTrack).map
 // The people a project's cards can wait on: only that project's own, so projects never mix.
 const people = (p) => [...new Set([ME, ...(p?.todos || []).flatMap((t) => [t.waitingOn, t.sentTo, t.owner])].filter((x) => x && !["Claude", "Managers"].includes(x)))];
 // A session counts as working while it replies, or while one of its helpers is still running.
-const stateOf = (s) => (S.stream[s.id]?.active || (s.state === "idle" && (S.agents[s.id] || []).some((a) => a.state === "running")) ? "working" : s.state);
+// A chat waiting on Diogo's answer to its question counts as "waiting" (a reply for him), not "working":
+// the sidebar shows it like a new reply (10 Nov 2026).
+const stateOf = (s) => (s.question?.questions?.length && s.mine !== false) ? "waiting" : (S.stream[s.id]?.active || (s.state === "idle" && (S.agents[s.id] || []).some((a) => a.state === "running")) ? "working" : s.state);
 
 // The page reloads itself when its own files changed (an update), once they've been still for 10 s and you're
 // not in the middle of typing; drafts are kept (sessionStorage). 9 Nov 2026: a window ran the old page for days.
@@ -242,7 +244,7 @@ const kindOf = (p) => p.kind || "project";
 const railOrder = () => [{ id: "today", name: "Today" }, ...["project", "sales", "client"].flatMap((k) => P().filter((p) => kindOf(p) === k))];
 function railItem(p, unread) {
   const cur = S.view === p.id;
-  let h = `<button class="ritem" aria-current="${cur}" data-go="${p.id}" title="${esc(p.name)}"><span class="pavw${unread(p.sessions) ? " ready" : p.sessions.some((s) => stateOf(s) === "working") ? " working" : ""}" title="${unread(p.sessions) ? "A reply is waiting for you" : p.sessions.some((s) => stateOf(s) === "working") ? "Working…" : ""}"><span class="pav${p.logo ? " logo" : ""}" style="background:${p.color}">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : esc(p.kind === "sales" ? "€" : p.name[0])}</span></span><span class="nm">${esc(p.name)}</span><span class="live">${p.kind === "sales" ? "" : p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;
+  let h = `<button class="ritem" aria-current="${cur}" data-go="${p.id}" title="${esc(p.name)}"><span class="pavw${unread(p.sessions) ? " ready" : p.sessions.some((s) => stateOf(s) === "working") ? " working" : ""}" title="${p.sessions.some((s) => s.question?.questions?.length) ? "A question is waiting for your answer" : unread(p.sessions) ? "A reply is waiting for you" : p.sessions.some((s) => stateOf(s) === "working") ? "Working…" : ""}"><span class="pav${p.logo ? " logo" : ""}" style="background:${p.color}">${p.logo ? `<img src="${esc(p.logo)}" alt="">` : esc(p.kind === "sales" ? "€" : p.name[0])}</span></span><span class="nm">${esc(p.name)}</span><span class="live">${p.kind === "sales" ? "" : p.sessions.map((s) => `<span class="dot ${stateOf(s)}"></span>`).join("")}</span></button>`;
   // No track list under the project here: just projects (Diogo, 3 Nov 2026). Tracks are the chips at the top.
   return h;
 }
