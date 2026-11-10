@@ -224,7 +224,7 @@ function morningRun({ force = false, send = true } = {}) {
   const out = { ...r, at: new Date().toISOString(), sent: [] };
   // One message per chat, a few minutes apart, so the Mac isn't asked to run every chat at once.
   if (send) r.chats.forEach((c, i) => {
-    out.sent.push({ project: c.project, session: c.session, name: c.name, due: c.due.length, undated: c.undated.length });
+    out.sent.push({ project: c.project, session: c.session, name: c.name, due: c.due.length, undated: c.undated.length, open: (c.open || []).length });
     setTimeout(() => { try { sendTo(c.project, c.session, morningMod.chatMessage(c, d), { auto: true }); } catch {} }, i * 3 * 60e3);
   });
   mkdirSync(dirname(MORNING), { recursive: true }); writeFileSync(MORNING, JSON.stringify(out, null, 2) + "\n");
