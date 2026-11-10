@@ -535,6 +535,9 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
   .rail{position:fixed;top:10px;bottom:10px;left:10px;width:56px;z-index:30;padding:12px 8px;transition:width .18s var(--ease) .15s}
   .rail:hover,.rail:has(:focus-visible){width:236px;transition-delay:0s;background:var(--glass-2);box-shadow:0 18px 50px rgba(15,23,42,.22)}
   .rail:not(:hover):not(:has(:focus-visible)) :is(.brand .bt,.rail-label,.subtracks,.rail-foot,.ritem .nm,.ritem .live){display:none}
+  /* Narrow, the selected item's left bar sat against its icon's ring and read as a heavier left edge (10 Nov 2026): the ring says it alone. */
+  .rail:not(:hover):not(:has(:focus-visible)) .ritem[aria-current="true"]::before{display:none}
+  .rail:not(:hover):not(:has(:focus-visible)) .ritem[aria-current="true"]{background:transparent;box-shadow:none}
   .brand{padding:0 6px 12px;white-space:nowrap}
   .ritem{padding:6px;white-space:nowrap}
   .rail-label{padding:10px 6px 4px}
@@ -727,6 +730,9 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
   -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;
   animation:ring 1.8s linear infinite}
 @keyframes ring{to{--ring:360deg}}
+/* The selected project already has a blue ring (2px gap + 2px): its working arc circles just outside it, not on top. */
+.ritem[aria-current="true"] .pavw.working::after{inset:-7px;border-radius:14px}
+.ritem[aria-current="true"] .pavw.ready .pav{outline-offset:6px}
 /* The ring is the icon's own outline (drawn crisp on every side), and the pop-in ends with no transform left on it:
    a ring held at scale(1) after the animation was drawn heavier on its left edge (10 Nov 2026). */
 .pavw.ready .pav{outline:2px solid var(--alert);outline-offset:2px;animation:readyring .45s ease-out backwards}
