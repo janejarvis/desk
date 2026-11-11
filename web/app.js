@@ -38,16 +38,33 @@ const needsMe = (t) => (t.status === "waiting" && t.waitingOn === ME) || (t.owne
 const initials = (n) => n.split(/\s+/).filter((w) => /[A-Za-z0-9]/.test(w)).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "·";
 
 // Claude writes markdown; show it as it reads. Escaped first, so nothing in it becomes HTML.
+// Bold, code and links inside a line (also inside a table cell).
+const mdInline = (h) => h.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+  .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+  .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+  .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+// A markdown table (a | header | line, a |---| line, then rows) drawn as a real table (Diogo, 11 Nov 2026).
+const mdRow = (l) => l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+function mdTables(h, keep) {
+  const L = h.split("\n"), out = [];
+  for (let i = 0; i < L.length; i++) {
+    if (/^\s*\|.*\|\s*$/.test(L[i]) && /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(L[i + 1] || "")) {
+      const head = mdRow(L[i]), al = mdRow(L[i + 1]).map((c) => (/^:-+:$/.test(c) ? "center" : /-:$/.test(c) ? "right" : ""));
+      const rows = []; let j = i + 2;
+      for (; j < L.length && /^\s*\|.*\|\s*$/.test(L[j]); j++) rows.push(mdRow(L[j]));
+      const td = (t, c, k) => `<${t}${al[k] ? ` style="text-align:${al[k]}"` : ""}>${mdInline(c || "")}</${t}>`;
+      keep.push(`<div class="mdtw"><table class="mdt"><thead><tr>${head.map((c, k) => td("th", c, k)).join("")}</tr></thead><tbody>${rows.map((r) => `<tr>${head.map((_, k) => td("td", r[k], k)).join("")}</tr>`).join("")}</tbody></table></div>`);
+      out.push(`\u0001${keep.length - 1}\u0001`); i = j - 1;
+    } else out.push(L[i]);
+  }
+  return out.join("\n");
+}
 function md(s) {
-  const blocks = [];
+  const blocks = [], tables = [];
   let h = esc(s).replace(/```[^\n]*\n([\s\S]*?)```/g, (_, c) => { blocks.push(c); return `\u0000${blocks.length - 1}\u0000`; });
-  h = h.replace(/^#{1,6}\s+(.+)$/gm, "<b>$1</b>")
-    .replace(/^(\s*)[-*]\s+/gm, "$1• ")
-    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
-    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-    .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
-  return h.replace(/\u0000(\d+)\u0000/g, (_, i) => `<pre>${blocks[i]}</pre>`);
+  h = mdTables(h, tables);
+  h = mdInline(h.replace(/^#{1,6}\s+(.+)$/gm, "<b>$1</b>").replace(/^(\s*)[-*]\s+/gm, "$1• "));
+  return h.replace(/\u0001(\d+)\u0001\n?/g, (_, i) => tables[i]).replace(/\u0000(\d+)\u0000/g, (_, i) => `<pre>${blocks[i]}</pre>`);
 }
 
 // ---- server ----

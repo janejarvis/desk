@@ -741,3 +741,11 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 @keyframes readyin{0%{opacity:0;transform:scale(.6)}60%{opacity:1;transform:scale(1.08)}100%{opacity:1;transform:scale(1)}}
 .pav.unread,.pav.working{animation:none}
 @media (prefers-reduced-motion:reduce){.pavw.working::after{animation:none;background:var(--accent)}.pavw.ready .pav,.pavw.ready::after{animation:none}}
+
+/* Markdown tables in chat replies: a real table, scrolling sideways inside the message when wide */
+.mdtw{overflow-x:auto;margin:6px 0;max-width:100%}
+.mdt{border-collapse:collapse;font-size:12.5px;line-height:1.4;white-space:normal;min-width:60%}
+.mdt th,.mdt td{border-bottom:1px solid var(--hair);padding:6px 10px;text-align:left;vertical-align:top}
+.mdt th{font-weight:600;color:var(--ink);background:var(--soft);white-space:nowrap}
+.mdt tbody tr:last-child td{border-bottom:0}
+.mdt tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--soft) 45%,transparent)}
