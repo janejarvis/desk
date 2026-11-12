@@ -570,7 +570,7 @@ const routes = {
   "GET /api/morning": () => { const m = readMorning(); return m ? { ...m, items: m.items.map((x) => ({ ...x, done: (load(x.project).todos || []).find((t) => t.id === x.id)?.status === "done" })) } : null; },
   "POST /api/morning": (b) => morningRun({ force: true, send: b.send !== false }),
   "POST /api/answer": (b) => { if (!runner.answer(b.session, b.request_id, b.answers || {})) throw Object.assign(new Error("That question was already answered or the chat stopped."), { user: true }); try { run("session.set", b.project, { id: b.session, question: null }); } catch {} return { ok: true }; },
-  "POST /api/chrome": () => chromeExt.ensure(),
+  "POST /api/chrome": async () => runner.loginBroken() ? { ok: false, what: "Chrome itself is fine, but Claude in Chrome needs Diogo's everyday Claude sign-in, which has run out. Ask for it with desk ask \"Sign in to Claude again (Chrome needs it)\" --run \"claude auth login\" and tell Diogo in one line; after he signs in, the next message here has Chrome." } : chromeExt.ensure(),
   "POST /api/ask": (b) => answerAsk(b.project, b.session, b.id, b.answer),
   "POST /api/askinput": (b) => askInput(b.run, b.text),
   "POST /api/askcancel": (b) => askCancel(b.run),
