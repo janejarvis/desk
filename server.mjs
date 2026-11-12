@@ -202,7 +202,7 @@ function handler(pid, sid, wasNew, sent = "") {
     // The everyday sign-in failed: answer on the long-lived key now, and ask Diogo to sign in again (Chrome needs it).
     if (ev.type === "done" && ev.error && SIGNED_OUT.test(ev.error) && !ev.usedKey && MAC && runner.deskKey() && sent) {
       runner.setLoginBroken(true);
-      try { addAsk(pid, cur, { title: "Sign in to Claude again (Chrome needs it)", why: "Claude's everyday sign-in ran out. Replies carry on with the Desk's own key meanwhile, but Claude in Chrome only works with your sign-in. A browser page opens: sign in and click Authorize.", cmd: "claude auth login", kind: "login", resend: "[From the Desk] Diogo signed in to Claude again: Claude in Chrome works again in this chat." }); } catch {}
+      try { addAsk(pid, cur, { title: "Sign in to Claude again (Chrome needs it)", why: "Claude's everyday sign-in ran out. Replies carry on with the Desk's own key meanwhile, but Claude in Chrome only works with your sign-in. A browser page opens: sign in and click Authorize.", cmd: `BROWSER=${JSON.stringify(join(ROOT, "bin", "open-in-chrome.sh"))} claude auth login`, kind: "login", resend: "[From the Desk] Diogo signed in to Claude again: Claude in Chrome works again in this chat." }); } catch {}
       setTimeout(() => { try { runner.send({ session: { ...load(pid).sessions.find((x) => x.id === cur), cwd: expand(load(pid).sessions.find((x) => x.id === cur)?.cwd) }, project: load(pid), trackName: "", text: sent, fork: false, useKey: true }, handler(pid, cur, false, sent)); } catch {} }, 500);
       broadcast({ ...ev, error: undefined, type: "stream", kind: ev.type, session: cur }); check(); return;
     }
