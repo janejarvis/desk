@@ -199,6 +199,13 @@ function handler(pid, sid, wasNew, sent = "") {
       const n = (autoGo.get(cur) || 0) + 1; autoGo.set(cur, n);
       if (n <= 2) setTimeout(() => { try { sendTo(pid, cur, `[From the Desk] When your reply ended, ${ev.cutOff.length === 1 ? "this background job was" : "these background jobs were"} stopped before finishing: ${ev.cutOff.map((d) => `"${d}"`).join(", ")}. On the Desk nothing in the background survives the end of a reply. Carry the work on now in the foreground: do it yourself or run helpers synchronously (never run_in_background), and reply only when it's done or truly blocked.`, { auto: true }); } catch {} }, 1500);
     }
+    // The everyday sign-in failed: answer on the long-lived key now, and ask Diogo to sign in again (Chrome needs it).
+    if (ev.type === "done" && ev.error && SIGNED_OUT.test(ev.error) && !ev.usedKey && MAC && runner.deskKey() && sent) {
+      runner.setLoginBroken(true);
+      try { addAsk(pid, cur, { title: "Sign in to Claude again (Chrome needs it)", why: "Claude's everyday sign-in ran out. Replies carry on with the Desk's own key meanwhile, but Claude in Chrome only works with your sign-in. A browser page opens: sign in and click Authorize.", cmd: "claude auth login", kind: "login", resend: "[From the Desk] Diogo signed in to Claude again: Claude in Chrome works again in this chat." }); } catch {}
+      setTimeout(() => { try { runner.send({ session: { ...load(pid).sessions.find((x) => x.id === cur), cwd: expand(load(pid).sessions.find((x) => x.id === cur)?.cwd) }, project: load(pid), trackName: "", text: sent, fork: false, useKey: true }, handler(pid, cur, false, sent)); } catch {} }, 500);
+      broadcast({ ...ev, error: undefined, type: "stream", kind: ev.type, session: cur }); check(); return;
+    }
     if (ev.type === "done" && ev.error && SIGNED_OUT.test(ev.error)) {
       ev = { ...ev, error: "Claude is signed out on this computer." };
       // On the Mac the fix is the Desk's own long-lived key (bin/desk-claude-token.py), not another everyday sign-in.
@@ -288,6 +295,7 @@ function askRun(pid, s, a) {
   child.on("error", (e) => add(`\n${e.message}\n`));
   child.on("close", (code) => {
     Object.assign(r, { done: true, code }); broadcast({ type: "askrun", run: askView(r) });
+    if (code === 0 && /claude auth login/.test(a.cmd || "")) runner.setLoginBroken(false); // signed in again: back to the everyday sign-in
     setTimeout(() => askRuns.delete(id), 10 * 60e3);
     if (r.cancelled) return;
     const cur = load(pid).sessions.find((x) => x.id === s.id || (x.previousIds || []).includes(s.id)); if (!cur) return;
