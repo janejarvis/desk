@@ -236,6 +236,13 @@ function morningRun({ force = false, send = true } = {}) {
   broadcast({ type: "morning" });
   return out;
 }
+// Claude Code keeps a copy of files for its edit previews in /tmp/claude-<uid>/bash-edit-diff and never removes them:
+// 27 GB by 12 Nov 2026, the disk full a second time. Every hour, copies older than 6 hours go.
+function tidyTmp() {
+  const dir = join("/private/tmp", `claude-${process.getuid?.() ?? 501}`, "bash-edit-diff");
+  try { for (const f of readdirSync(dir)) { const pth = join(dir, f); try { if (Date.now() - statSync(pth).mtimeMs > 6 * 3600e3) rmSync(pth, { recursive: true, force: true }); } catch {} } } catch {}
+}
+if (MAC) { setTimeout(tidyTmp, 30e3); setInterval(tidyTmp, 3600e3).unref?.(); }
 if (process.env.DESK_MORNING !== "off") setInterval(() => { const n = new Date(); if (n.getHours() >= 8 && readMorning()?.date !== morningMod.today()) morningRun(); }, 60e3).unref?.();
 
 const autoGo = new Map(); // session -> automatic "carry on" messages sent in a row
