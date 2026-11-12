@@ -24,6 +24,7 @@ import { artifactsIn, readFrom } from "./lib/files.mjs";
 import * as runner from "./lib/runner.mjs";
 import { withShims } from "./lib/accounts.mjs";
 import * as morningMod from "./lib/morning.mjs";
+import * as chromeExt from "./lib/chrome.mjs";
 
 const PORT = +(process.env.DESK_PORT || 4848);
 const WEB = join(ROOT, "web");
@@ -243,6 +244,8 @@ function tidyTmp() {
   try { for (const f of readdirSync(dir)) { const pth = join(dir, f); try { if (Date.now() - statSync(pth).mtimeMs > 6 * 3600e3) rmSync(pth, { recursive: true, force: true }); } catch {} } } catch {}
 }
 if (MAC) { setTimeout(tidyTmp, 30e3); setInterval(tidyTmp, 3600e3).unref?.(); }
+// Every 2 minutes: no Chrome extension connection → start Chrome in the background (lib/chrome.mjs), so chats keep it.
+if (MAC && process.env.DESK_CHROME !== "off") setInterval(() => { if (!chromeExt.connected()) chromeExt.ensure({ wait: 15000 }).catch(() => {}); }, 120e3).unref?.();
 if (process.env.DESK_MORNING !== "off") setInterval(() => { const n = new Date(); if (n.getHours() >= 8 && readMorning()?.date !== morningMod.today()) morningRun(); }, 60e3).unref?.();
 
 const autoGo = new Map(); // session -> automatic "carry on" messages sent in a row
@@ -559,6 +562,7 @@ const routes = {
   "GET /api/morning": () => { const m = readMorning(); return m ? { ...m, items: m.items.map((x) => ({ ...x, done: (load(x.project).todos || []).find((t) => t.id === x.id)?.status === "done" })) } : null; },
   "POST /api/morning": (b) => morningRun({ force: true, send: b.send !== false }),
   "POST /api/answer": (b) => { if (!runner.answer(b.session, b.request_id, b.answers || {})) throw Object.assign(new Error("That question was already answered or the chat stopped."), { user: true }); try { run("session.set", b.project, { id: b.session, question: null }); } catch {} return { ok: true }; },
+  "POST /api/chrome": () => chromeExt.ensure(),
   "POST /api/ask": (b) => answerAsk(b.project, b.session, b.id, b.answer),
   "POST /api/askinput": (b) => askInput(b.run, b.text),
   "POST /api/askcancel": (b) => askCancel(b.run),

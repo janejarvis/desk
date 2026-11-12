@@ -65,6 +65,9 @@ Long jobs
   desk wait <process id> "<what it is>"       a job that outlives your reply (started detached):
     the Desk shows this session working on it, and messages you when that process ends.
 
+Chrome (the Claude in Chrome extension)
+  desk chrome                                 checks it, starts or wakes Chrome if needed, and says what to do
+
 Other chats of this project
   desk tell "<chat or track>" "<message>"     hand something over: it arrives in that chat and it
     starts on it. Write it complete (it's all they get). SendMessage/ListAgents don't reach Desk chats.
@@ -257,6 +260,12 @@ try {
     if (!s) fail("This session isn't on the Desk.");
     run("session.set", pid, { id: s.id, bg: [...(s.bg || []).filter((b) => b.pid !== id), { pid: id, what: what.slice(0, 120), at: new Date().toISOString() }] });
     say(`The Desk shows "${what}" as working and will message this session when process ${id} ends.`);
+  } else if (cmd === "chrome") {
+    // Is the Claude in Chrome extension reachable? Wakes Chrome if not (lib/chrome.mjs) and waits for it.
+    const r = await fetch(`http://127.0.0.1:${process.env.DESK_PORT || 4848}/api/chrome`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).then((x) => x.json()).catch(() => null);
+    if (!r) fail("The Desk isn't running, so it couldn't check Chrome.");
+    say(r.what + (r.ok ? " Try the Chrome tool again now (if this chat's tools still say not connected, it started before Chrome came back: tell Diogo in one line to send you any message, and it reconnects)." : ""));
+    if (!r.ok) process.exitCode = 2;
   } else if (cmd === "tell") {
     // Hands something to another chat of this project on the Desk: it arrives there as a message and
     // that chat starts working on it (3 Nov 2026: a handover sent with SendMessage reached a program
