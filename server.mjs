@@ -6,7 +6,7 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync, watch, statSync, un
 import { execFileSync, execFile, spawn } from "node:child_process";
 import { tmpdir, homedir } from "node:os";
 const HOME_DIR = homedir();
-import { join, extname, dirname, basename } from "node:path";
+import { join, extname, dirname, basename, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { ROOT, DESK_HOME, ME, DATA, SHARED, SHARED_DATA, expand, tilde, load, loadAll, update } from "./lib/store.mjs";
 import { run, createProject, ensureBrief, ensureChats } from "./lib/ops.mjs";
@@ -410,7 +410,7 @@ async function saveLogo(req, res, q) {
 }
 function sendFile(res, path) {
   const f = String(path || "");
-  if (!f.startsWith(UPLOADS + "/") || f.includes("..") || !existsSync(f)) { res.writeHead(404); return res.end("Not found"); }
+  if (!f.startsWith(UPLOADS + sep) || f.includes("..") || !existsSync(f)) { res.writeHead(404); return res.end("Not found"); }
   const t = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp", ".heic": "image/heic", ".mp4": "video/mp4", ".mov": "video/quicktime", ".pdf": "application/pdf" }[extname(f).toLowerCase()] || "application/octet-stream";
   res.writeHead(200, { "Content-Type": t, "Cache-Control": "max-age=86400" });
   createReadStream(f).pipe(res);
@@ -432,7 +432,7 @@ function viewFile(res, pathname) {
   let target = f.path;
   if (want && want !== basename(f.path)) {
     target = join(dir, want);
-    if (!target.startsWith(dir + "/") || target.includes("/../") || !existsSync(target) || !statSync(target).isFile()) { res.writeHead(404); return res.end(); }
+    if (!target.startsWith(dir + sep) || target.split(/[\\/]/).includes("..") || !existsSync(target) || !statSync(target).isFile()) { res.writeHead(404); return res.end(); }
   }
   const ext = extname(target).toLowerCase();
   const head = { "Content-Type": MIME[ext] || MIME_EXTRA[ext] || "application/octet-stream", "Content-Length": statSync(target).size, "Cache-Control": "no-cache",
@@ -642,7 +642,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/voice") return voice(req, res);
     if (req.method === "GET" && url.pathname === "/api/leadfile") { // a lead's audit PDF, from the shared folder
       try { const l = leadsDb.get(url.searchParams.get("id")), a = (l.audits || [])[+url.searchParams.get("n")], f = a && expand(a.path);
-        if (!f || !f.startsWith(join(SHARED, "sales") + "/") || f.includes("..") || !existsSync(f)) { res.writeHead(404); return res.end("Not found"); }
+        if (!f || !f.startsWith(join(SHARED, "sales") + sep) || f.includes("..") || !existsSync(f)) // sep: "\\" on Windows (13 Nov 2026: João's audits all said not found) { res.writeHead(404); return res.end("Not found"); }
         res.writeHead(200, { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${basename(f)}"` }); return createReadStream(f).pipe(res);
       } catch { res.writeHead(404); return res.end("Not found"); } }
     if (req.method === "POST" && url.pathname === "/api/logo") return saveLogo(req, res, url.searchParams);
