@@ -749,3 +749,7 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 .mdt th{font-weight:600;color:var(--ink);background:var(--soft);white-space:nowrap}
 .mdt tbody tr:last-child td{border-bottom:0}
 .mdt tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--soft) 45%,transparent)}
+/* The 3D viewer's hint and Reset button, over the model */
+.v3d{position:relative}
+.v3dbar{position:absolute;left:12px;right:12px;bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12px;color:var(--ink-3);pointer-events:none}
+.v3dbar button{pointer-events:auto}

@@ -40,8 +40,20 @@ export async function showSTL(el, url) {
   const w = el.clientWidth || 800, h = el.clientHeight || 600;
   const canvas = document.createElement("canvas"); canvas.style.width = "100%"; canvas.style.height = "100%"; el.replaceChildren(canvas);
   const { renderer, s, cam } = scene(g, w, h, canvas);
-  const ctl = new OrbitControls(cam, canvas); ctl.enableDamping = true;
-  let on = true; const loop = () => { if (!on || !canvas.isConnected) return renderer.dispose(); ctl.update(); renderer.render(s, cam); requestAnimationFrame(loop); }; loop();
+  // Drag to turn, scroll or pinch to zoom, right-drag (or Shift-drag) to move it around; arrow keys move it too.
+  const ctl = new OrbitControls(cam, canvas); ctl.enableDamping = true; ctl.screenSpacePanning = true; ctl.listenToKeyEvents?.(window);
+  canvas.addEventListener("pointerdown", (e) => { if (e.shiftKey && e.button === 0) { ctl.mouseButtons.LEFT = 2; canvas.addEventListener("pointerup", () => (ctl.mouseButtons.LEFT = 0), { once: true }); } }, true);
+  const home = cam.position.clone(); const reset = () => { cam.position.copy(home); ctl.target.set(0, 0, 0); ctl.update(); renderer.render(s, cam); };
+  const bar = document.createElement("div"); bar.className = "v3dbar";
+  bar.innerHTML = `<span>Drag to turn · scroll or pinch to zoom · right-drag or Shift-drag to move</span><button type="button" class="btn small">Reset view</button>`;
+  bar.querySelector("button").onclick = reset; el.appendChild(bar);
+  const fit = () => { const W = el.clientWidth || w, H = el.clientHeight || h; renderer.setSize(W, H, false); cam.aspect = W / H; cam.updateProjectionMatrix(); renderer.render(s, cam); };
+  const ro = new ResizeObserver(fit); ro.observe(el);
+  // Drawn only while it moves (a turn, a zoom, the glide after letting go), not 60 times a second while still.
+  let on = true, queued = false;
+  const frame = () => { queued = false; if (!on || !canvas.isConnected) { ro.disconnect(); return renderer.dispose(); } const moving = ctl.update(); renderer.render(s, cam); if (moving) draw(); };
+  const draw = () => { if (!queued) { queued = true; requestAnimationFrame(frame); } };
+  ctl.addEventListener("change", draw); new ResizeObserver(draw).observe(el); draw();
   return () => { on = false; };
 }
 
