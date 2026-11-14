@@ -253,6 +253,8 @@ function tidyTmp() {
 if (MAC) { setTimeout(tidyTmp, 30e3); setInterval(tidyTmp, 3600e3).unref?.(); }
 // Every 2 minutes: no Chrome extension connection → start Chrome in the background (lib/chrome.mjs), so chats keep it.
 if (MAC && process.env.DESK_CHROME !== "off") setInterval(() => { if (!chromeExt.connected()) chromeExt.ensure({ wait: 15000 }).catch(() => {}); }, 120e3).unref?.();
+// Every 2 minutes: renew the everyday Claude sign-in just before it runs out (lib/runner.mjs keepLogin).
+if (MAC && process.env.DESK_KEEP_LOGIN !== "off") setInterval(() => runner.keepLogin((m) => console.log(new Date().toISOString(), m)), 120e3).unref?.();
 if (process.env.DESK_MORNING !== "off") setInterval(() => { const n = new Date(); if (n.getHours() >= 8 && readMorning()?.date !== morningMod.today()) morningRun(); }, 60e3).unref?.();
 
 const autoGo = new Map(); // session -> automatic "carry on" messages sent in a row
