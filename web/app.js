@@ -721,7 +721,7 @@ function renderChats(b = $("body")) {
 function paneHTML({ p: sp, s }, key) {
   const label = `${sp.name} · ${trName(sp, s.track)}`; // shown on hover only: the pane header is just the session's name
   const st = stateOf(s), live = S.stream[s.id], msgs = S.msgs[s.id]?.list;
-  const mh = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => `<div class="m ${m.who}">${m.who === "me" ? meText(m.text) : mdKept(m.text)}${m.who === "claude" ? fileCards(sp, s, msgs, m) : ""}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
+  const mh = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => { const n = m.who === "me" && noteOf(m.text); return `<div class="m ${n ? "note" : m.who}">${n ? `<span class="nlab">${esc(n.label)}</span>${md(n.text)}` : m.who === "me" ? meText(m.text) : mdKept(m.text)}${m.who === "claude" ? fileCards(sp, s, msgs, m) : ""}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`; }).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
   let body = "";   // what follows the messages: refused steps, steps for Diogo, commands, the live reply
   for (const [i, d] of (s.denied || []).entries()) body += `<div class="m denied"><div class="dh"><b>Not allowed from the Desk</b><span>${esc(d.tool)} · ${esc(clock(d.at))}</span></div><div class="dd">${esc(d.detail)}</div>${d.command ? `<code class="dc">${esc(d.command.length > 300 ? d.command.slice(0, 300) + "…" : d.command)}</code>` : ""}<div class="dx">Steps that need your OK are refused when sent from the Desk.${d.command ? " Run it yourself, or tell the session how to go on." : " Tell the session how to go on."}</div><div class="db">${d.command ? `<button type="button" class="btn small" data-runit="${esc(s.id)}|${i}">Run it myself (!)</button>` : ""}<button type="button" class="linkbtn" data-undeny="${esc(sp.id)}|${esc(s.id)}|${i}">Dismiss</button></div></div>`;
   for (const a of s.asks || []) body += askCard(sp, s, a);
@@ -1098,6 +1098,16 @@ async function attachFiles(pid, sid, files) {
     } catch (e) { Object.assign(a, { up: false, err: e.message }); }
     paintChips(sid);
   }
+}
+// Messages Diogo didn't type: a handover from another chat ("desk tell"), a note from the Desk (a button pressed,
+// a background job ended), the morning run, or another Desk session. Shown as a labelled card, not as his bubble
+// (20 Nov 2026: "handovers and messages between tracks need a different styling").
+function noteOf(t) {
+  const m = String(t || "").match(/^\[(Handed over on the Desk by ([^\]]+)|Morning run[^\]]*|From ([^\]]+))\]\s*/);
+  if (!m) return null;
+  const who = (x) => { const y = x.replace(/^the /, ""); return y.replace(/ \(([^)]+)\)$/, (_, tr) => y.toLowerCase().startsWith(tr.toLowerCase()) ? "" : ` · ${tr}`); };
+  const label = m[2] ? `Handover from ${who(m[2])}` : m[1].startsWith("Morning run") ? "Morning run" : /^the Desk\b/.test(m[3]) ? "Desk" : `From ${who(m[3])}`;
+  return { label, text: t.slice(m[0].length) };
 }
 // What she sees of her own message: the text, then the attachments as thumbnails or file chips.
 function meText(t) {

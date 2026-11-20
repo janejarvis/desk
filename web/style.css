@@ -263,6 +263,8 @@ details.note div{padding-top:4px}
 .m{max-width:88%;padding:10px 14px;border-radius:17px;line-height:1.45;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
 .m.claude{align-self:flex-start;background:var(--glass-2);border:1px solid var(--edge);box-shadow:var(--card);border-bottom-left-radius:5px}
 .m.me{align-self:flex-end;background:var(--me);color:var(--me-ink);border-bottom-right-radius:5px}
+.m.note{align-self:stretch;max-width:none;background:var(--accent-soft);border:1px solid var(--edge);border-left:3px solid var(--accent);border-radius:12px;font-size:13px;color:var(--ink-2)}
+.m.note .nlab{display:block;font:600 11px/1.2 var(--mono);letter-spacing:.02em;color:var(--accent);margin-bottom:5px;white-space:normal}
 .m.sys{align-self:center;background:transparent;color:var(--ink-3);font-size:12px;text-align:center}
 .m .when{display:block;font:500 10.5px/1 var(--mono);opacity:.55;margin-top:6px}
 .typing{display:inline-flex;gap:4px;padding:4px 2px}
