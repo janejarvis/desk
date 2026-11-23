@@ -688,7 +688,7 @@ function renderChats(b = $("body")) {
       // Same chat: add only the new messages (3 Nov 2026: rebuilding a 600-message chat while it replied
       // froze typing), swap the cards after them, and update the state, unread mark and Stop button.
       if (sec._mh !== pp.mh) { if (sec._mh && pp.mh.startsWith(sec._mh)) mt.insertAdjacentHTML("beforebegin", pp.mh.slice(sec._mh.length)); else { [...m.children].forEach((c) => c !== mt && c.remove()); mt.insertAdjacentHTML("beforebegin", pp.mh); } sec._mh = pp.mh; }
-      if (sec._tail !== pp.tail) { mt.innerHTML = pp.tail; sec._tail = pp.tail; }
+      if (sec._tail !== pp.tail) { const f = document.activeElement?.matches?.(".qin") && mt.contains(document.activeElement) ? [document.activeElement.dataset.qin, document.activeElement.selectionStart] : null; mt.innerHTML = pp.tail; sec._tail = pp.tail; if (f) { const n = mt.querySelector(`[data-qin="${CSS.escape(f[0])}"]`); if (n) { n.focus(); n.setSelectionRange(f[1], f[1]); } } }
       const st = stateOf(x.s), live = S.stream[id]?.active, lab = sec.querySelector(".convhead .state");
       if (lab) { lab.className = `state ${st}`; lab.textContent = x.s.question ? "Asks you" : st === "working" ? "Working" : st === "waiting" ? "New reply" : "Idle"; }
       sec.classList.toggle("unread", st === "waiting"); sec.classList.toggle("focus", S.focus[key] === id && panes.length > 1);
@@ -746,25 +746,42 @@ function paneHTML({ p: sp, s }, key) {
    bin/claude-keeper.mjs holds the question while Diogo picks; one question with one choice sends on the
    tap, several (or several choices) need Send answers. Typing a message instead answers it in words. */
 const qMulti = (q) => q.questions.length > 1 || q.questions.some((x) => x.multiSelect);
+// A question with choices (AskUserQuestion), as a list: one row per option, and a last row to write your own
+// answer (23 Nov 2026, Diogo: "we need the last option of the question to be a free text input").
 function questionCard(sp, s, q) {
-  const sel = ((S.qsel ||= {})[s.id] ||= {});
+  const sel = ((S.qsel ||= {})[s.id] ||= {}), txt = ((S.qtext ||= {})[s.id] ||= {}), multi = qMulti(q), k = `${esc(sp.id)}|${esc(s.id)}`;
   const on = (x, o) => (x.multiSelect ? (sel[x.question] || []).includes(o.label) : sel[x.question] === o.label);
-  return `<div class="m question"><span class="qtop">${esc(s.name)} asks</span>` + q.questions.map((x, qi) => `<div class="qq">${x.header ? `<span class="qh">${esc(x.header)}</span>` : ""}<b>${esc(x.question)}</b>${x.multiSelect ? '<span class="qh">pick any</span>' : ""}<div class="qopts">${(x.options || []).map((o, oi) => `<button type="button" class="qopt${on(x, o) ? " on" : ""}" data-qopt="${esc(sp.id)}|${esc(s.id)}|${qi}|${oi}"><span>${esc(o.label)}</span>${o.description && o.description !== o.label ? `<small>${esc(o.description)}</small>` : ""}</button>`).join("")}</div></div>`).join("")
-    + (qMulti(q) ? `<div class="db"><button type="button" class="btn primary small" data-qsend="${esc(sp.id)}|${esc(s.id)}">Send answers</button></div>` : "") + `<span class="qhint">Or type your own answer in the box below.</span></div>`;
+  return `<div class="m question"><span class="qtop">${esc(s.name)} asks</span>` + q.questions.map((x, qi) => `<div class="qq${x.multiSelect ? " multi" : ""}">${x.header ? `<span class="qh">${esc(x.header)}</span>` : ""}<b>${esc(x.question)}</b>${x.multiSelect ? '<span class="qsub">Pick any</span>' : ""}<div class="qopts">`
+    + (x.options || []).map((o, oi) => `<button type="button" class="qopt${on(x, o) ? " on" : ""}" data-qopt="${k}|${qi}|${oi}"><i class="qmk"></i><span class="qtx"><span>${esc(o.label)}</span>${o.description && o.description !== o.label ? `<small>${esc(o.description)}</small>` : ""}</span></button>`).join("")
+    + `<label class="qopt qfree${(txt[qi] || "").trim() ? " on" : ""}"><i class="qmk"></i><input class="qin" data-qin="${k}|${qi}" placeholder="Something else…" value="${esc(txt[qi] || "")}" autocomplete="off">${multi ? "" : `<button type="button" class="qgo" data-qgo="${k}" aria-label="Send answer" title="Send">${I.send}</button>`}</label>`
+    + `</div></div>`).join("")
+    + (multi ? `<div class="db"><button type="button" class="btn primary small" data-qsend="${k}">Send answers</button></div>` : "") + `</div>`;
 }
 function pickAnswer(k) {
   const [pid, sid, qi, oi] = k.split("|"), x = findS(sid); const q = x?.s.question; if (!q) return;
   const qq = q.questions[+qi], o = qq.options[+oi], sel = ((S.qsel ||= {})[sid] ||= {});
   if (qq.multiSelect) { const a = new Set(sel[qq.question] || []); a.has(o.label) ? a.delete(o.label) : a.add(o.label); sel[qq.question] = [...a]; }
-  else sel[qq.question] = o.label;
+  else { sel[qq.question] = o.label; delete ((S.qtext ||= {})[sid] ||= {})[qi]; }
   if (!qMulti(q)) return sendAnswers(pid, sid);
   render();
 }
+// Typing your own answer: kept per question; for a pick-one question it replaces the option picked.
+function typeAnswer(el) {
+  const [, sid, qi] = el.dataset.qin.split("|"), q = findS(sid)?.s.question, qq = q?.questions[+qi]; if (!qq) return;
+  ((S.qtext ||= {})[sid] ||= {})[qi] = el.value;
+  const row = el.closest(".qopts"); el.parentElement.classList.toggle("on", !!el.value.trim());
+  if (!qq.multiSelect && el.value.trim()) { delete ((S.qsel ||= {})[sid] ||= {})[qq.question]; row.querySelectorAll("button.qopt.on").forEach((b) => b.classList.remove("on")); }
+}
 async function sendAnswers(pid, sid) {
   const x = findS(sid), q = x?.s.question; if (!q) return;
-  const sel = (S.qsel || {})[sid] || {}, answers = {};
-  for (const qq of q.questions) { const v = sel[qq.question]; if (!v || (Array.isArray(v) && !v.length)) return toast(`Pick an answer for: ${qq.question}`, true); answers[qq.question] = Array.isArray(v) ? v.join(", ") : v; }
-  try { await api("/api/answer", { project: pid, session: sid, request_id: q.request_id, answers }); delete S.qsel[sid]; x.s.question = null; render(); }
+  const sel = (S.qsel || {})[sid] || {}, txt = (S.qtext || {})[sid] || {}, answers = {};
+  for (const [qi, qq] of q.questions.entries()) {
+    const v = sel[qq.question], t = (txt[qi] || "").trim();
+    const a = qq.multiSelect ? [...(v || []), ...(t ? [t] : [])].join(", ") : t || v || "";
+    if (!a) return toast(`Pick or write an answer for: ${qq.question}`, true);
+    answers[qq.question] = a;
+  }
+  try { await api("/api/answer", { project: pid, session: sid, request_id: q.request_id, answers }); delete S.qsel[sid]; if (S.qtext) delete S.qtext[sid]; x.s.question = null; render(); }
   catch (e) { toast(e.message, true); refresh(); }
 }
 
@@ -1134,6 +1151,8 @@ function wireChats(p, key) {
   wireHelpers(b);
   b.querySelectorAll("[data-runit]").forEach((x) => (x.onclick = () => { const [sid, i] = x.dataset.runit.split("|"); const d = findS(sid)?.s.denied?.[+i]; const ta = $("say-" + sid); if (d && ta) { ta.value = "! " + d.command; ta.dispatchEvent(new Event("input")); ta.focus(); } }));
   b.querySelectorAll("[data-qopt]").forEach((x) => (x.onclick = () => pickAnswer(x.dataset.qopt)));
+  b.querySelectorAll("[data-qin]").forEach((x) => { x.oninput = () => typeAnswer(x); x.onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); const [pid, sid] = x.dataset.qin.split("|"); if (!qMulti(findS(sid)?.s.question || { questions: [] })) sendAnswers(pid, sid); } }; });
+  b.querySelectorAll("[data-qgo]").forEach((x) => (x.onclick = () => { const [pid, sid] = x.dataset.qgo.split("|"); sendAnswers(pid, sid); }));
   b.querySelectorAll("[data-qsend]").forEach((x) => (x.onclick = () => { const [pid, sid] = x.dataset.qsend.split("|"); sendAnswers(pid, sid); }));
   b.querySelectorAll("[data-ask]").forEach((x) => (x.onclick = () => { const [pid, sid, id, answer] = x.dataset.ask.split("|"); answerAsk(pid, sid, id, answer); }));
   b.querySelectorAll("[data-undeny]").forEach((x) => (x.onclick = async () => { const [pid, sid, i] = x.dataset.undeny.split("|"); const s = findS(sid)?.s; if (!s) return; await op("session.set", pid, { id: sid, denied: (s.denied || []).filter((_, k) => k !== +i) }).catch(() => {}); refresh(); }));
