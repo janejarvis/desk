@@ -768,3 +768,5 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 .v3d{position:relative}
 .v3dbar{position:absolute;left:12px;right:12px;bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:12px;color:var(--ink-3);pointer-events:none}
 .v3dbar button{pointer-events:auto}
+.lsearch{font:inherit;font-size:13px;color:var(--ink);background:var(--glass-2);border:1px solid var(--hair);border-radius:999px;padding:7px 14px;width:220px;max-width:100%;outline:none}
+.lsearch:focus{border-color:var(--accent)}

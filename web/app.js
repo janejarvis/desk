@@ -1426,7 +1426,7 @@ function renderNumbers() {
 }
 
 /* ---------- Sales: the leads, the outreach and their numbers (shared with the partner) ---------- */
-S.leadsData = null; S.lead = null; S.leadFilter = "all"; S.laneOpen = {};
+S.leadsData = null; S.lead = null; S.leadFilter = "all"; S.laneOpen = {}; S.leadQ = "";
 async function loadLeads() { try { S.leadsData = await api("/api/leads"); } catch (e) { toast(e.message, true); } if (proj()?.kind === "sales" && ["leads", "outreach", "numbers"].includes(S.tab)) render(); }
 const LANE = { new: "todo", audit: "doing", contacted: "waiting", booked: "ongoing", held: "ongoing", proposal: "sent", trial: "sent", negotiation: "sent", won: "done", lost: "blocked" };
 const replied = (l) => (l.thread || []).some((m) => m.dir === "in") || (l.timeline || []).some((t) => /\bthey replied\b|^replied\b/i.test(t.text || "") && !/haven.t|if no|no reply/i.test(t.text || ""));
@@ -1437,13 +1437,18 @@ function renderLeads() {
   if (needLeads()) return;
   const d = S.leadsData, b = $("body");
   const F = { all: ["Everything", () => true], mine: ["Mine", (l) => (l.owner || "") === ME], outbound: ["Outreach", (l) => l.source?.kind === "outbound"], form: ["Website forms", (l) => l.source?.kind === "form"], booking: ["Booking page", (l) => l.source?.kind === "booking"], hand: ["Referral / added by hand", (l) => ["manual", "referral"].includes(l.source?.kind)] };
-  const ls = d.leads.filter(F[S.leadFilter]?.[1] || (() => true));
-  let h = `<div class="tools"><div class="filters">${Object.entries(F).map(([k, [n]]) => `<button class="chip" data-lf="${k}" aria-pressed="${S.leadFilter === k}">${n}</button>`).join("")}</div><button class="chip add" id="addlead">${I.plus}Lead</button></div>`;
-  const lanes = d.stages.filter(([k]) => k !== "notlead");
+  // The search box finds a lead by any of its details (23 Nov 2026, Diogo: "we need a search box").
+  const q = S.leadQ.trim().toLowerCase(), hit = (l) => !q || [l.company, l.name, l.email, l.phone, l.website, l.source?.trade, l.owner].some((v) => String(v || "").toLowerCase().includes(q));
+  const ls = d.leads.filter(F[S.leadFilter]?.[1] || (() => true)).filter(hit);
+  let h = `<div class="tools"><input type="search" class="lsearch" id="leadq" placeholder="Search leads" value="${esc(S.leadQ)}" autocomplete="off"><div class="filters">${Object.entries(F).map(([k, [n]]) => `<button class="chip" data-lf="${k}" aria-pressed="${S.leadFilter === k}">${n}</button>`).join("")}</div><button class="chip add" id="addlead">${I.plus}Lead</button></div>`;
+  // Audit sent comes in two lanes (23 Nov 2026, Diogo): audits outreach sent on its own, and leads that asked for one.
+  // Both are the same stage; a card dropped on either is "Audit sent".
+  const lanes = d.stages.filter(([k]) => k !== "notlead").flatMap(([k, name]) => k === "audit" ? [["audit:ob", `${name} · outreach`], ["audit:asked", `${name} · asked for it`]] : [[k, name]]);
+  const inLane = (l, k) => k === "audit:ob" ? l.stage === "audit" && l.source?.kind === "outbound" : k === "audit:asked" ? l.stage === "audit" && l.source?.kind !== "outbound" : l.stage === k;
   h += `<div class="lsplit${S.lead ? " open" : ""}"><div class="lscroll"><div class="cols leads" style="grid-template-columns:repeat(${lanes.length},minmax(180px,1fr))">`;
   for (const [k, name] of lanes) {
-    const here = ls.filter((l) => l.stage === k), show = S.laneOpen[k] ? here : here.slice(0, 12);
-    h += `<div class="col ${LANE[k] || "todo"}"><h3>${esc(name)} <span class="lcount">${here.length}</span></h3><div class="drop" data-stage="${k}">`;
+    const here = ls.filter((l) => inLane(l, k)), show = S.laneOpen[k] || q ? here : here.slice(0, 12), st = k.split(":")[0];
+    h += `<div class="col ${LANE[st] || "todo"}"><h3>${esc(name)} <span class="lcount">${here.length}</span></h3><div class="drop" data-stage="${st}">`;
     for (const l of show) h += `<div class="card${S.lead === l.id ? " picked" : ""}" draggable="true" tabindex="0" data-lead="${esc(l.id)}"><div class="tt">${esc(l.company || l.name || l.email)}</div><div class="meta">${srcPill(l, d)}${replied(l) ? '<span class="pill p1">Replied</span>' : ""}${l.auditReads ? '<span class="pill">Audit read</span>' : ""}${l.next?.due ? `<span class="pill${l.next.due < iso(TODAY()) ? " late" : ""}">Next ${esc(l.next.due.slice(5).split("-").reverse().join("/"))}</span>` : ""}<span>${esc(l.owner || "")}</span></div></div>`;
     if (here.length > show.length) h += `<button class="linkbtn lmore" data-lmore="${k}">+${here.length - show.length} more</button>`;
     h += `</div></div>`;
@@ -1452,8 +1457,11 @@ function renderLeads() {
   h += `</div>${nl ? `<div class="hint lnote">Not a lead: ${nl} (selling to us, spam, job applications) · kept, in no count</div>` : ""}</div>`;
   if (S.lead) h += leadDetail(d.leads.find((l) => l.id === S.lead), d);
   h += `</div>`;
+  const typing = document.activeElement?.id === "leadq" ? [document.activeElement.selectionStart] : null; // a redraw keeps the search box as it was
   b.innerHTML = h;
   b.querySelectorAll("[data-lf]").forEach((x) => (x.onclick = () => { S.leadFilter = x.dataset.lf; render(); }));
+  const lq = $("leadq"); lq.oninput = () => { S.leadQ = lq.value; render(); };
+  if (typing) { lq.focus(); lq.setSelectionRange(typing[0], typing[0]); }
   b.querySelectorAll("[data-lmore]").forEach((x) => (x.onclick = () => { S.laneOpen[x.dataset.lmore] = true; render(); }));
   b.querySelectorAll("[data-lead]").forEach((c) => { c.onclick = () => { S.lead = S.lead === c.dataset.lead ? null : c.dataset.lead; render(); }; c.ondragstart = (e) => e.dataTransfer.setData("text/lead", c.dataset.lead); });
   b.querySelectorAll("[data-stage]").forEach((z) => { z.ondragover = (e) => { e.preventDefault(); z.classList.add("over"); }; z.ondragleave = () => z.classList.remove("over"); z.ondrop = (e) => { e.preventDefault(); z.classList.remove("over"); const id = e.dataTransfer.getData("text/lead"); if (!id) return; if (z.dataset.stage === "lost") { S.lead = id; S.askLost = true; render(); return; } leadSet(id, { stage: z.dataset.stage }); }; });
