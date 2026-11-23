@@ -396,12 +396,13 @@ function renderBoard() {
     }
     lanes.innerHTML = any ? g + "</div>" : `<div class="empty">${S.filter === "me" ? "Nothing is waiting on you." : "Nothing is overdue."}</div>`;
   } else if (!p) {
-    let g = `<div class="hscroll"><div class="swim"><div class="cols six lanehead">${STATUSES.map(([st, l]) => `<div class="col ${st}"><h3>${l}</h3></div>`).join("")}</div>`;
-    for (const pp of P()) g += `<section class="projblock"><div class="phead"><span class="sw" style="background:${pp.color}"></span><b>${esc(pp.name)}</b></div><div class="cols six">${cols(pp, pp.todos, false)}</div></section>`;
+    let g = `<div class="hscroll"><div class="swim"><div class="cols six lanehead" style="${laneGrid()}">${STATUSES.map(([st, l]) => `<div class="col ${st}${SHUT[st] ? " shut" : ""}">${laneHead(st, l)}</div>`).join("")}</div>`;
+    for (const pp of P()) g += `<section class="projblock"><div class="phead"><span class="sw" style="background:${pp.color}"></span><b>${esc(pp.name)}</b></div><div class="cols six" style="${laneGrid()}">${cols(pp, pp.todos, false)}</div></section>`;
     lanes.innerHTML = g + `</div></div>`;
-  } else lanes.innerHTML = `<div class="hscroll"><div class="cols six">${cols(p, p.todos.filter(inTrack), true)}</div></div>`;
+  } else lanes.innerHTML = `<div class="hscroll"><div class="cols six" style="${laneGrid()}">${cols(p, p.todos.filter(inTrack), true)}</div></div>`;
   b.querySelectorAll("[data-f]").forEach((x) => (x.onclick = () => { S.filter = x.dataset.f; render(); }));
   $("alldone").onchange = (e) => { S.allDone = e.target.checked; render(); };
+  b.querySelectorAll("[data-fold]").forEach((x) => (x.onclick = () => { const st = x.dataset.fold; SHUT[st] = !SHUT[st]; if (!SHUT[st]) delete SHUT[st]; shutSave(); render(); }));
   const fillWho = () => { const pp = P().find((x) => x.id === $("a-where").value.split("|")[0]); $("a-wait").innerHTML = `<option value="">Claude does it</option>${people(pp).map((n) => `<option value="${esc(n)}">Waiting on ${esc(n)}</option>`).join("")}`; };
   fillWho(); $("a-where").onchange = fillWho;
   $("a-title").oninput = (e) => { $("a-btn").disabled = !e.target.value.trim(); };
@@ -417,11 +418,21 @@ function renderBoard() {
 }
 const sortFn = (a, b) => (a.priority - b.priority) || ((a.due || "9999") < (b.due || "9999") ? -1 : (a.due || "9999") > (b.due || "9999") ? 1 : 0);
 const recentDone = (t) => S.allDone || daysSince(t.doneAt || t.updatedAt) <= 7;
+// Sent and Done fold into a narrow strip (23 Nov 2026, Diogo: "both done and sent lanes must be collapsible").
+// Remembered per browser; a folded lane still takes a dropped card.
+const FOLDS = ["sent", "done"];
+const SHUT = (() => { try { return JSON.parse(localStorage.getItem("lanes-shut") || "{}"); } catch { return {}; } })();
+const shutSave = () => { try { localStorage.setItem("lanes-shut", JSON.stringify(SHUT)); } catch {} };
+const laneGrid = () => `grid-template-columns:${STATUSES.map(([st]) => SHUT[st] ? "44px" : "minmax(175px,1fr)").join(" ")};min-width:${STATUSES.reduce((w, [st]) => w + (SHUT[st] ? 44 : 175) + 10, 0)}px`;
+const laneHead = (st, lab, extra = "", n = 0) => FOLDS.includes(st)
+  ? SHUT[st] ? `<h3 class="shuth"><button type="button" class="foldbtn" data-fold="${st}" title="Show ${lab}" aria-expanded="false"><span class="fl">${lab}</span>${n ? `<span class="n">${n}</span>` : ""}</button></h3>` : `<h3>${lab}<span class="hx">${extra}<button type="button" class="foldbtn" data-fold="${st}" title="Fold ${lab}" aria-expanded="true">${I.chev || "‹"}</button></span></h3>`
+  : `<h3>${lab}${extra}</h3>`;
 function cols(p, items, head) {
   return STATUSES.map(([st, lab]) => {
     let its = items.filter((t) => t.status === st), hidden = 0;
     if (st === "done") { const n = its.length; its = its.filter(recentDone).sort((a, b) => (b.doneAt || "").localeCompare(a.doneAt || "")); hidden = n - its.length; } else its.sort(sortFn);
-    return `<div class="col ${st}">${head ? `<h3>${lab}${hidden ? `<span class="n">+${hidden} older</span>` : ""}</h3>` : ""}<div class="drop" data-st="${st}" data-p="${p.id}">${its.length ? its.map((t) => card(p, t)).join("") : `<div class="empty">${EMPTY[st]}</div>`}</div></div>`;
+    if (SHUT[st]) return `<div class="col ${st} shut">${head ? laneHead(st, lab, "", its.length) : ""}<div class="drop" data-st="${st}" data-p="${p.id}"></div></div>`;
+    return `<div class="col ${st}">${head ? laneHead(st, lab, hidden ? `<span class="n">+${hidden} older</span>` : "") : ""}<div class="drop" data-st="${st}" data-p="${p.id}">${its.length ? its.map((t) => card(p, t)).join("") : `<div class="empty">${EMPTY[st]}</div>`}</div></div>`;
   }).join("");
 }
 function card(p, t) {
