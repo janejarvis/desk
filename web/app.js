@@ -762,7 +762,7 @@ const qMulti = (q) => q.questions.length > 1 || q.questions.some((x) => x.multiS
 function questionCard(sp, s, q) {
   const sel = ((S.qsel ||= {})[s.id] ||= {}), txt = ((S.qtext ||= {})[s.id] ||= {}), multi = qMulti(q), k = `${esc(sp.id)}|${esc(s.id)}`;
   const on = (x, o) => (x.multiSelect ? (sel[x.question] || []).includes(o.label) : sel[x.question] === o.label);
-  return `<div class="m question"><span class="qtop">${esc(s.name)} asks</span>` + q.questions.map((x, qi) => `<div class="qq${x.multiSelect ? " multi" : ""}">${x.header ? `<span class="qh">${esc(x.header)}</span>` : ""}<b>${esc(x.question)}</b>${x.multiSelect ? '<span class="qsub">Pick any</span>' : ""}<div class="qopts">`
+  return `<div class="m question"><span class="qtop">${esc(s.name)} asks</span>` + q.questions.map((x, qi) => `<div class="qq${x.multiSelect ? " multi" : ""}">${x.header ? `<span class="qh">${esc(x.header)}</span>` : ""}<div class="qtext">${md(x.question)}</div>${x.multiSelect ? '<span class="qsub">Pick any</span>' : ""}<div class="qopts">`
     + (x.options || []).map((o, oi) => `<button type="button" class="qopt${on(x, o) ? " on" : ""}" data-qopt="${k}|${qi}|${oi}"><i class="qmk"></i><span class="qtx"><span>${esc(o.label)}</span>${o.description && o.description !== o.label ? `<small>${esc(o.description)}</small>` : ""}</span></button>`).join("")
     + `<label class="qopt qfree${(txt[qi] || "").trim() ? " on" : ""}"><i class="qmk"></i><input class="qin" data-qin="${k}|${qi}" placeholder="Something else…" value="${esc(txt[qi] || "")}" autocomplete="off">${multi ? "" : `<button type="button" class="qgo" data-qgo="${k}" aria-label="Send answer" title="Send">${I.send}</button>`}</label>`
     + `</div></div>`).join("")
