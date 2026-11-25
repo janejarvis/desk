@@ -298,6 +298,9 @@ function sendTo(pid, sid, text, { auto = false } = {}) {
   if (s.owner && s.owner !== ME) throw Object.assign(new Error(`This is ${s.owner}'s session; it runs on their computer. Start your own with + New session.`), { user: true });
   const note = shellNote(s);
   if (note) { text = note + text; run("session.set", pid, { id: s.id, pendingShell: (s.pendingShell || []).filter((e) => e.state !== "done") }); }
+  // A new chat whose first reply was cut off (a restart, a stop) already has its conversation on disk; starting it
+  // as new again fails with "Session ID … is already in use" every time (25 Nov 2026: B2B Outreach stuck). Resume it.
+  if (s.started === false && !runner.isRunning(s.id) && transcriptPath(s.id, expand(s.cwd))) { run("session.set", pid, { id: s.id, started: true }); s.started = true; }
   const fork = s.started !== false && !runner.isRunning(s.id) && !!live().get(s.id)?.interactive;
   runner.send({ session: { ...s, cwd: expand(s.cwd) }, project: p, trackName: p.tracks.find((t) => t.id === s.track)?.name || "", text, fork }, handler(pid, s.id, s.started === false, text));
 }
