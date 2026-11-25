@@ -260,6 +260,12 @@ const hm = (d) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinute
 function promiseRun() {
   const now = Date.now(), due = new Map();
   for (const p of loadAll()) for (const t of p.todos || []) {
+    // Expected from someone else: one check at its time (then the morning run keeps it in view).
+    if (t.expect && t.status === "waiting" && t.due && t.at && !t.reminded && now >= new Date(`${t.due}T${t.at}:00`).getTime()) {
+      const s = p.sessions.find((x) => x.id === t.session || (x.previousIds || []).includes(t.session)) || p.sessions.find((x) => x.track === t.track && x.mine !== false);
+      if (s && s.mine !== false && !runner.isBusy(s.id)) { const k = `${p.id}|${s.id}`; (due.get(k) || due.set(k, { p, s, ts: [] }).get(k)).ts.push(t); }
+      continue;
+    }
     if (!t.promise || t.status === "done" || t.status === "waiting" || !t.due || !t.at) continue;
     const when = new Date(`${t.due}T${t.at}:00`).getTime(), last = Date.parse(t.remindedAt || "") || 0, n = t.reminded || 0;
     if (now < when || (n && now - last < 60 * 60e3)) continue;
@@ -270,7 +276,11 @@ function promiseRun() {
   }
   for (const { p, s, ts } of due.values()) {
     const at = new Date(), one = (t) => `- [${t.id}] ${t.title}, promised for ${t.due === `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}` ? t.at : `${t.due} ${t.at}`}${t.said && t.said !== t.title ? `, in your words: "${t.said}"` : ""}${t.reminded ? " (second reminder)" : ""}`;
-    const text = `[Reminder from the Desk] It's ${hm(at)}. ${ts.length === 1 ? "You promised this and it isn't done:" : "You promised these and they aren't done:"}\n${ts.map(one).join("\n")}\nDo it now and close it: desk promise done <id> --proof "<what shows it's done>". If it can't be done now, move it with the reason: desk promise move <id> --at HH:MM --why "<why>". Only ${ME} can drop a promise.`;
+    const mine = ts.filter((t) => !t.expect), theirs = ts.filter((t) => t.expect);
+    const exp = (t) => `- [${t.id}] ${t.title}, expected from ${t.waitingOn} by ${t.due === `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}` ? t.at : `${t.due} ${t.at}`}${t.said && t.said !== t.title ? `, in your words: "${t.said}"` : ""}`;
+    const text = `[Reminder from the Desk] It's ${hm(at)}.`
+      + (mine.length ? ` ${mine.length === 1 ? "You promised this and it isn't done:" : "You promised these and they aren't done:"}\n${mine.map(one).join("\n")}\nDo it now and close it: desk promise done <id> --proof "<what shows it's done>". If it can't be done now, move it with the reason: desk promise move <id> --at HH:MM --why "<why>". Only ${ME} can drop a promise.` : "")
+      + (theirs.length ? `${mine.length ? "\n\n" : " "}${theirs.length === 1 ? "This was expected by now:" : "These were expected by now:"}\n${theirs.map(exp).join("\n")}\nCheck whether it came (the inbox, Teams, the shared folder…). If it did: desk todo <id> done --note "arrived: …". If not, tell ${ME} in one line and offer a chase in ${ME}'s voice for ${ME}'s OK, or move it: desk promise move <id> --at <time> --why "<why>".` : "");
     try { sendTo(p.id, s.id, text, { auto: true }); for (const t of ts) run("todo.set", p.id, { id: t.id, reminded: (t.reminded || 0) + 1, remindedAt: at.toISOString() }); } catch {}
   }
 }

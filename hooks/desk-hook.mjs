@@ -37,7 +37,7 @@ const joinHint = (p) => `This folder belongs to ${p.name} on ${ME}'s Desk (the p
 
 const READ_ONLY_TOOLS = /^(Read|Grep|Glob|LS|WebSearch|WebFetch|ToolSearch|Skill|AskUserQuestion|TodoWrite|TaskList|TaskGet|ListAgents|ScheduleWakeup|EnterPlanMode|ExitPlanMode|ArtifactComments|ReportFindings)$/;
 const READ_ONLY_BASH = /^\s*(cd [^;&|]+(&&|;)\s*)?(cat|ls|head|tail|grep|rg|find|stat|wc|sed -n|awk|echo|pwd|which|file|du|df|git (status|log|diff|show|branch)|jq|sort|uniq|date|env|printenv|ps|lsof)\b/;
-const isDesk = (c) => c?.name === "Bash" && /(^|[;&|(\s])desk\s+(todo|milestone|meeting|track|join|file|promise)\b/.test(String(c.input?.command || ""));
+const isDesk = (c) => c?.name === "Bash" && /(^|[;&|(\s])desk\s+(todo|milestone|meeting|track|join|file|promise|expect)\b/.test(String(c.input?.command || ""));
 export function isWork(c) {
   const n = c?.name || "";
   if (READ_ONLY_TOOLS.test(n)) return false;
@@ -55,7 +55,7 @@ export function readTurn(lines) {
     let o; try { o = JSON.parse(l); } catch { continue; }
     if (o.isSidechain) continue;
     const m = o.message ?? {};
-    if (m.role === "assistant" && Array.isArray(m.content)) { for (const c of m.content) { if (c?.type === "tool_use") { if (isDesk(c)) { desk = true; if (/desk\s+promise\b/.test(String(c.input?.command || ""))) promised = true; } else if (isWork(c)) work++; } else if (c?.type === "text" && !said) said = c.text || ""; } continue; }
+    if (m.role === "assistant" && Array.isArray(m.content)) { for (const c of m.content) { if (c?.type === "tool_use") { if (isDesk(c)) { desk = true; if (/desk\s+(promise|expect)\b/.test(String(c.input?.command || ""))) promised = true; } else if (isWork(c)) work++; } else if (c?.type === "text" && !said) said = c.text || ""; } continue; }
     if (m.role === "user") {
       const c = m.content;
       if (Array.isArray(c) && c.some((x) => x?.type === "tool_result")) continue;
@@ -70,6 +70,15 @@ export function readTurn(lines) {
 // keep: the chat stops existing when its reply ends. A cheap phrase check first, then a small model confirms it is
 // the chat committing to later work (not a program, not someone else), so a plain mention doesn't stop the reply.
 export const PROMISE = /\b(?:I'?ll|I will|I'm going to|I am going to)\b[^.!?\n]{0,120}?\b(later(?: today| on| this \w+)?|tonight|this (?:evening|afternoon)|tomorrow(?: morning)?|by (?:the )?end of (?:the )?day|end of (?:the )?day|after lunch|before lunch|in (?:an|\d+) (?:hour|hours|minutes))\b/i;
+// Waiting on someone by a time ("Clare's list should arrive today", "Val comes back Thursday noon"), with no
+// `desk expect` behind it: the same small check, asked the other way round.
+export const EXPECT = /\b(?:should (?:arrive|come|land|reply|answer|be back)|(?:will|is going to|promised to|said (?:she|he|they)'?(?:ll| would)) (?:send|reply|answer|come back|get back|decide|confirm|share|deliver|look)|due)\b[^.!?\n]{0,80}?\b(today|tonight|tomorrow|this (?:morning|afternoon|evening|week)|by (?:the )?end of (?:the )?day|(?:on |by )?(?:mon|tues|wednes|thurs|fri|satur|sun)day|noon|\d{1,2}(?::\d{2})?\s?(?:am|pm)|\d{1,2} (?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*)\b/i;
+function reallyExpect(text) {
+  if (process.env.DESK_PROMISE_CHECK === "off") return true;
+  const env = { ...process.env }; for (const k of Object.keys(env)) if (/^(CLAUDECODE|DESK_SESSION|DESK_PROJECT|DESK_TRACK)$/.test(k)) delete env[k];
+  const q = `Reply with only YES or NO. In the message below, does the assistant say that someone else (a person, a client, a colleague) is expected to send, reply, decide or deliver something by a particular time or day? Answer NO if it is only something the assistant itself will do, or a program or schedule.\n\n<message>\n${String(text).slice(-3000)}\n</message>`;
+  try { const r = spawnSync(process.env.DESK_CLAUDE || "claude", ["-p", q, "--model", "claude-haiku-4-5-20251001", "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config", "--tools", ""], { encoding: "utf8", env, timeout: 30000 }); return /^\s*YES/i.test(r.stdout || ""); } catch { return false; }
+}
 function reallyPromise(text) {
   if (process.env.DESK_PROMISE_CHECK === "off") return true;
   const env = { ...process.env }; for (const k of Object.keys(env)) if (/^(CLAUDECODE|DESK_SESSION|DESK_PROJECT|DESK_TRACK)$/.test(k)) delete env[k];
@@ -120,6 +129,11 @@ try {
     const text = String(p.last_assistant_message || said || ""), m = !promised && text.match(PROMISE);
     if (m && reallyPromise(text)) {
       process.stdout.write(JSON.stringify({ decision: "block", reason: `You wrote "${m[0]}". You stop existing when this reply ends: nothing brings you back to it unless the Desk does. First, can you do it now? If you can, do it now. If not, record it so the Desk wakes you then: desk promise "<what>" --at HH:MM --said "<your words>" (or --at "tomorrow 09:00"), and update the Desk for anything else this turn changed. If it wasn't a promise, end the reply as it is.` }));
+      process.exit(0);
+    }
+    const e = !promised && text.match(EXPECT);
+    if (e && reallyExpect(text)) {
+      process.stdout.write(JSON.stringify({ decision: "block", reason: `You wrote "${e[0]}": you're waiting on someone for something by a time. Nothing will check it came unless the Desk does. Record each one: desk expect "<what>" --from <who> --by <time or YYYY-MM-DD> --said "<your words>" (the Desk wakes you then to check), and update the Desk for anything else this turn changed. If nothing is really expected, end the reply as it is.` }));
       process.exit(0);
     }
     const f = join(STATE, sid.replace(/[^\w-]/g, "") + ".json");

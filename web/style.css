@@ -848,3 +848,6 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 .tlnone{font-size:12.5px;color:var(--ink-3);line-height:1.45}
 .tlkey{display:flex;gap:14px;margin-top:16px;padding-top:10px;border-top:1px solid var(--hair);font-size:11px;color:var(--ink-3)}.tlkey span{display:flex;align-items:center;gap:6px}
 @media (max-width:760px){.tline{display:none}.app.has-tl .main{margin-right:0}}
+.tk.tke{border-radius:50%;border:2px solid var(--accent);box-sizing:border-box}
+.tli.late .tk.tke{border-color:var(--bad)}
+.pfrom{font-style:normal;font-weight:600;color:var(--ink-2)}

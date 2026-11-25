@@ -34,6 +34,9 @@ Promises (you stop existing between turns: nothing brings you back to a "later" 
   desk promise move <id> --at <time> --why "<why it moved>"
     First ask yourself whether you can do it now; if you can, do it instead of promising.
     Only ${ME} can drop a promise.
+  desk expect "<what>" --from <who> --by <time or YYYY-MM-DD> --said "<your words>"
+                                              waiting on someone for something by a time (a reply, a file,
+                                              a decision): the Desk wakes this chat then to check it came
 
 Roadmap (milestone status: done, now, next)
   desk milestone add "<title>" [--track T] [--status S] [--due YYYY-MM-DD] [--note TEXT]
@@ -219,7 +222,7 @@ try {
   else if (cmd === "restart") { // safe at any time: replies keep running and the new server picks them up
     try { execFileSync("launchctl", ["kickstart", "-k", `gui/${process.getuid()}/com.blendd.desk`], { stdio: "ignore" }); say("Desk restarted."); }
     catch { fail("The Desk isn't installed as a login item. Run: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.blendd.desk.plist"); } }
-  else if (cmd === "promise") {
+  else if (cmd === "promise" || cmd === "expect") {
     // When: "HH:MM" (today, or tomorrow if that time has passed), "tomorrow HH:MM", or "YYYY-MM-DD HH:MM".
     const when = (v) => {
       const m = String(v || "").trim().match(/^(?:(tomorrow)\s+|(\d{4}-\d{2}-\d{2})\s+)?(\d{1,2}):(\d{2})$/i);
@@ -229,14 +232,21 @@ try {
       if (m[1] || at <= `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`) d.setDate(d.getDate() + 1);
       return { due: ymd(d), at };
     };
-    if (a1 === "done") {
+    if (cmd === "expect") {
+      if (!a1 || !flags.from || !(flags.by || flags.at)) fail('Try: desk expect "<what>" --from Clare --by 17:00 (or "tomorrow 12:00", or a date) --said "<your words>"');
+      const by = String(flags.by || flags.at).trim(), td = new Date(), today = `${td.getFullYear()}-${String(td.getMonth() + 1).padStart(2, "0")}-${String(td.getDate()).padStart(2, "0")}`;
+      const w = /^\d{1,2}:\d{2}$/.test(by) ? { due: today, at: by.padStart(5, "0") } : /^\d{4}-\d{2}-\d{2}$/.test(by) ? { due: by, at: "18:00" } : by.toLowerCase() === "today" ? when("18:00") : by.toLowerCase() === "tomorrow" ? when("tomorrow 18:00") : when(by);
+      const pid = project(), me = mine()?.s.id || process.env.DESK_SESSION || "";
+      const t = run("todo.add", pid, { title: a1, track: track(pid), status: "waiting", waitingOn: flags.from, expect: true, ...w, said: flags.said || a1, session: me, source: "claude" });
+      say(`Expecting [${t.id}] ${t.title} from ${flags.from} by ${t.due} ${t.at}. The Desk wakes this chat then to check it came. When it does: desk todo ${t.id} done --note "arrived: …".`);
+    } else if (a1 === "done") {
       if (!flags.proof) fail(`Close a promise with what shows it's done: desk promise done ${a2 || "<id>"} --proof "<the commit, the page, the number…>"`);
       const pid = owner("todos", a2), old = load(pid).todos.find((x) => x.id === a2), t = run("todo.set", pid, { id: a2, status: "done", note: `${old?.note ? old.note + "\n" : ""}Done: ${flags.proof}` }); say(`[${t.id}] ${t.title}: done`);
     } else if (a1 === "move") {
       if (!flags.at || !flags.why) fail(`Move a promise with a new time and the reason: desk promise move ${a2 || "<id>"} --at 18:00 --why "<why>"`);
       const pid = owner("todos", a2), w = when(flags.at), old = load(pid).todos.find((x) => x.id === a2);
-      if (!old?.promise) fail(`[${a2}] isn't a promise.`);
-      const t = run("todo.set", pid, { id: a2, ...w, reminded: 0, remindedAt: "", status: old.status === "waiting" ? "doing" : undefined, note: `${old.note ? old.note + "\n" : ""}Moved from ${old.due} ${old.at} to ${w.due} ${w.at}: ${flags.why}` });
+      if (!old?.promise && !old?.expect) fail(`[${a2}] isn't a promise or an expected item.`);
+      const t = run("todo.set", pid, { id: a2, ...w, reminded: 0, remindedAt: "", status: old.promise && old.status === "waiting" ? "doing" : undefined, note: `${old.note ? old.note + "\n" : ""}Moved from ${old.due} ${old.at} to ${w.due} ${w.at}: ${flags.why}` });
       say(`[${t.id}] ${t.title}: now ${t.due} ${t.at}`);
     } else if (a2 === undefined && a1 && !["done", "move"].includes(a1)) {
       if (!flags.at) fail('Say when: desk promise "<what>" --at 18:00 --said "<your words>"');

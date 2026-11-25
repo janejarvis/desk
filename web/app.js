@@ -878,7 +878,7 @@ function todayRow({ p, t }, d) {
 // line for now. Done / Not a promise are Diogo's; a click on a line opens that chat beside the list.
 function promisesToday() {
   const d = iso(TODAY()), tm = iso(new Date(TODAY().getTime() + 864e5)), now = Date.now();
-  return P().flatMap((p) => p.todos.filter((t) => t.promise && t.due && t.at && (t.due === d || (t.due === tm && t.status !== "done") || (t.due < d && t.status !== "done"))).map((t) => {
+  return P().flatMap((p) => p.todos.filter((t) => (t.promise || t.expect) && t.due && t.at && (t.due === d || (t.due === tm && t.status !== "done") || (t.due < d && t.status !== "done"))).map((t) => {
     const when = new Date(`${t.due}T${t.at}:00`).getTime();
     return { p, t, when, st: t.status === "done" ? "done" : now >= when ? "late" : "due" };
   })).sort((a, b) => a.when - b.when);
@@ -894,26 +894,26 @@ function renderTimeline() {
   if (!el) { document.querySelector(".app").insertAdjacentHTML("beforeend", '<aside class="tline glass" id="tline" aria-label="Timeline"></aside>'); el = $("tline"); el.onclick = timelineClick; }
   const d = iso(TODAY()), tm = iso(new Date(TODAY().getTime() + 864e5)), now = Date.now(), onTrack = (x) => S.track === "all" || !x || x === S.track;
   const items = [
-    ...p.todos.filter((t) => t.due && onTrack(t.track) && (t.status !== "done" || (t.promise && t.due === d))).map((t) => ({ k: t.promise ? "promise" : "card", id: t.id, d: t.due, at: t.at || "", title: t.title, tr: t.track, done: t.status === "done", late: t.status !== "done" && (t.due < d || (t.due === d && t.at && now >= new Date(`${t.due}T${t.at}:00`).getTime())), wait: t.status === "waiting" ? t.waitingOn : "" })),
+    ...p.todos.filter((t) => t.due && onTrack(t.track) && (t.status !== "done" || (t.promise && t.due === d))).map((t) => ({ k: t.promise ? "promise" : t.expect ? "expect" : "card", id: t.id, d: t.due, at: t.at || "", title: t.title, tr: t.track, done: t.status === "done", late: t.status !== "done" && (t.due < d || (t.due === d && t.at && now >= new Date(`${t.due}T${t.at}:00`).getTime())), wait: t.status === "waiting" ? t.waitingOn : "" })),
     ...p.milestones.filter((m) => m.due && m.status !== "done" && onTrack(m.track)).map((m) => ({ k: "milestone", id: m.id, d: m.due, at: "", title: m.title, tr: m.track, late: m.due < d })),
   ].sort((a, b) => a.d.localeCompare(b.d) || (a.at || "99").localeCompare(b.at || "99"));
   const later = iso(new Date(TODAY().getTime() + 14 * 864e5));
   const group = (x) => x.d < d ? "Late" : x.d === d ? "Today" : x.d === tm ? "Tomorrow" : x.d > later ? "Later" : fmt(x.d);
   const groups = []; for (const x of items) { const g = group(x); let y = groups.find((z) => z.g === g); if (!y) groups.push((y = { g, xs: [] })); y.xs.push(x); }
   const lateN = items.filter((x) => x.late).length, todayN = items.filter((x) => x.d === d && !x.done).length;
-  const ICON = { promise: '<i class="tk tkp"></i>', card: '<i class="tk tkc"></i>', milestone: '<i class="tk tkm"></i>' };
-  const row = (x) => `<button type="button" class="tli${x.late ? " late" : ""}${x.done ? " done" : ""}" data-tl="${x.k}|${esc(x.id)}">${ICON[x.k]}<span class="tlt">${x.at ? `<b>${esc(x.at)}</b> ` : ""}${esc(x.title)}</span><span class="tlm">${esc(trName(p, x.tr) || "")}${x.wait ? ` · waiting on ${esc(x.wait)}` : ""}${x.k === "milestone" ? " · milestone" : x.k === "promise" ? " · promise" : ""}</span></button>`;
+  const ICON = { promise: '<i class="tk tkp"></i>', expect: '<i class="tk tke"></i>', card: '<i class="tk tkc"></i>', milestone: '<i class="tk tkm"></i>' };
+  const row = (x) => `<button type="button" class="tli${x.late ? " late" : ""}${x.done ? " done" : ""}" data-tl="${x.k}|${esc(x.id)}">${ICON[x.k]}<span class="tlt">${x.at ? `<b>${esc(x.at)}</b> ` : ""}${esc(x.title)}</span><span class="tlm">${esc(trName(p, x.tr) || "")}${x.wait ? ` · ${x.k === "expect" ? "from" : "waiting on"} ${esc(x.wait)}` : ""}${x.k === "milestone" ? " · milestone" : x.k === "promise" ? " · promise" : x.k === "expect" ? " · expected" : ""}</span></button>`;
   const html = `<div class="tlbar"><span class="tlv">Timeline</span>${todayN ? `<span class="tln">${todayN}</span>` : ""}${lateN ? '<span class="tld" title="Something is late"></span>' : ""}</div>`
     + `<div class="tlbody"><div class="tlhead"><b>Timeline</b><span>${esc(p.name)}${S.track !== "all" ? " · " + esc(trName(p, S.track)) : ""}</span></div>`
     + (groups.length ? groups.map((g) => `<div class="tlg${g.g === "Late" ? " late" : ""}"><div class="tlgh">${esc(g.g)}</div>${g.xs.map(row).join("")}</div>`).join("") : `<p class="tlnone">Nothing dated yet. Promises and cards with a due date show here, day by day.</p>`)
-    + `<div class="tlkey"><span><i class="tk tkp"></i>promise</span><span><i class="tk tkc"></i>card</span><span><i class="tk tkm"></i>milestone</span></div></div>`;
+    + `<div class="tlkey"><span><i class="tk tkp"></i>promise</span><span><i class="tk tke"></i>expected</span><span><i class="tk tkc"></i>card</span><span><i class="tk tkm"></i>milestone</span></div></div>`;
   if (el._html !== html) { el.innerHTML = html; el._html = html; }
 }
 function timelineClick(e) {
   const b = e.target.closest("[data-tl]"); if (!b) return;
   const [k, id] = b.dataset.tl.split("|"), p = proj(); if (!p) return;
   if (k === "milestone") { S.tab = "roadmap"; return render(); }
-  const t = p.todos.find((x) => x.id === id), s = k === "promise" && t && cardChat(p, t);
+  const t = p.todos.find((x) => x.id === id), s = (k === "promise" || k === "expect") && t && cardChat(p, t);
   if (s) return openPane(paneKey(), s.id);
   S.tab = "board"; render();
 }
@@ -927,13 +927,13 @@ function promiseList() {
   if (!xs.length) return `<div class="promised"><div class="ptitle"><b>Promised</b><span>none for today or tomorrow</span></div><p class="pnone">When a chat says it will do something later, it shows here with its time, and the Desk reminds that chat when the time comes.</p></div>`;
   const d = iso(TODAY()), now = new Date(), nowAt = now.getTime(), late = xs.filter((x) => x.st === "late").length, done = xs.filter((x) => x.st === "done").length;
   const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-  let h = `<div class="ptitle"><b>Promised</b><span>today and tomorrow · ${xs.length} promise${xs.length === 1 ? "" : "s"}${done ? ` · ${done} done` : ""}${late ? ` · <i class="late">${late} late</i>` : ""}</span></div><div class="plist">`, drawn = false;
+  let h = `<div class="ptitle"><b>Promised &amp; expected</b><span>today and tomorrow · ${[xs.filter((x) => !x.t.expect).length && `${xs.filter((x) => !x.t.expect).length} promised`, xs.filter((x) => x.t.expect).length && `${xs.filter((x) => x.t.expect).length} expected`].filter(Boolean).join(" · ")}${done ? ` · ${done} done` : ""}${late ? ` · <i class="late">${late} late</i>` : ""}</span></div><div class="plist">`, drawn = false;
   for (const x of xs) {
     if (!drawn && x.when > nowAt) { h += `<div class="nowline"><span>${hhmm}</span><i></i></div>`; drawn = true; }
     const k = `${x.p.id}|${x.t.id}`, tm = x.t.due === d ? x.t.at : `${fmtShort(x.t.due)} ${x.t.at}`;
-    const pill = x.st === "done" ? `Done${x.t.doneAt ? " " + clock(x.t.doneAt) : ""}` : x.st === "late" ? `Late${x.t.reminded ? ` · reminded ${x.t.reminded === 1 ? "once" : "twice"}` : ""}` : x.t.due === d ? `Due ${x.t.at}` : `Tomorrow ${x.t.at}`;
-    h += `<div class="prow ${x.st}" data-pk="${esc(k)}"><span class="ptime">${esc(tm)}</span><i class="pdot"></i><span class="pwhat"><span class="pt">${esc(x.t.title)}</span><span class="pc"><span class="sw" style="background:${x.p.color}"></span>${esc(x.p.name)} · ${esc(trName(x.p, x.t.track))}</span>${x.t.said && x.t.said !== x.t.title ? `<span class="pq">\u201c${esc(x.t.said)}\u201d</span>` : ""}</span>`
-      + `<span class="pend"><span class="pst ${x.st}">${esc(pill)}</span>${x.st === "done" ? "" : `<button class="btn small" data-pdone="${esc(k)}">Done</button><button class="linkbtn" data-pnot="${esc(k)}" title="Not something it promised: take it off">Not a promise</button>`}</span></div>`;
+    const pill = x.t.expect && x.st !== "done" ? `${x.st === "late" ? "Late · " : ""}from ${x.t.waitingOn || "?"}${x.st === "late" ? "" : ` by ${x.t.due === d ? x.t.at : "tomorrow " + x.t.at}`}` : x.st === "done" ? `Done${x.t.doneAt ? " " + clock(x.t.doneAt) : ""}` : x.st === "late" ? `Late${x.t.reminded ? ` · reminded ${x.t.reminded === 1 ? "once" : "twice"}` : ""}` : x.t.due === d ? `Due ${x.t.at}` : `Tomorrow ${x.t.at}`;
+    h += `<div class="prow ${x.st}" data-pk="${esc(k)}"><span class="ptime">${esc(tm)}</span><i class="pdot"></i><span class="pwhat"><span class="pt">${x.t.expect ? `<i class="pfrom">${esc(x.t.waitingOn || "")}:</i> ` : ""}${esc(x.t.title)}</span><span class="pc"><span class="sw" style="background:${x.p.color}"></span>${esc(x.p.name)} · ${esc(trName(x.p, x.t.track))}</span>${x.t.said && x.t.said !== x.t.title ? `<span class="pq">\u201c${esc(x.t.said)}\u201d</span>` : ""}</span>`
+      + `<span class="pend"><span class="pst ${x.st}">${esc(pill)}</span>${x.st === "done" ? "" : `<button class="btn small" data-pdone="${esc(k)}">${x.t.expect ? "Arrived" : "Done"}</button><button class="linkbtn" data-pnot="${esc(k)}" title="Not something it promised: take it off">${x.t.expect ? "Not expected" : "Not a promise"}</button>`}</span></div>`;
   }
   return `<div class="promised">${h}</div></div>`;
 }
