@@ -819,3 +819,4 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 .m.dmark .mb{display:none}
 .m.dmark.open{flex-wrap:wrap;white-space:normal;background:var(--soft);border-radius:12px;padding:8px 12px;color:var(--ink-2);max-width:88%}
 .m.dmark.open .mb{display:block;flex-basis:100%;font-size:12.5px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:4px;cursor:text}
+.pnone{margin:0;font-size:12.5px;color:var(--ink-3);line-height:1.45}

@@ -877,8 +877,8 @@ function todayRow({ p, t }, d) {
 // Promised today (25 Nov 2026): what the chats said they would do by a time (`desk promise`), in time order, with a
 // line for now. Done / Not a promise are Diogo's; a click on a line opens that chat beside the list.
 function promisesToday() {
-  const d = iso(TODAY()), now = Date.now();
-  return P().flatMap((p) => p.todos.filter((t) => t.promise && t.due && t.at && (t.due === d || (t.due < d && t.status !== "done"))).map((t) => {
+  const d = iso(TODAY()), tm = iso(new Date(TODAY().getTime() + 864e5)), now = Date.now();
+  return P().flatMap((p) => p.todos.filter((t) => t.promise && t.due && t.at && (t.due === d || (t.due === tm && t.status !== "done") || (t.due < d && t.status !== "done"))).map((t) => {
     const when = new Date(`${t.due}T${t.at}:00`).getTime();
     return { p, t, when, st: t.status === "done" ? "done" : now >= when ? "late" : "due" };
   })).sort((a, b) => a.when - b.when);
@@ -886,17 +886,18 @@ function promisesToday() {
 function promiseStrip(p) {
   const xs = promisesToday().filter((x) => x.p === p); if (!xs.length) return "";
   const late = xs.filter((x) => x.st === "late"), next = late[0] || xs.find((x) => x.st === "due");
-  return `<button type="button" class="pstrip" id="pstrip"><b>Today</b><span class="sep">·</span><span>${xs.length} promised</span>${late.length ? `<span class="sep">·</span><span class="lt">${late.length} late</span>` : ""}${next ? `<span class="sep">·</span><span class="nx">next: ${esc(next.t.title)}, ${esc(next.t.at)}${next.st === "late" ? " (late)" : ""}</span>` : ""}<span class="open">See the day ›</span></button>`;
+  return `<button type="button" class="pstrip" id="pstrip"><b>Promised</b><span class="sep">·</span><span>${xs.length} today and tomorrow</span>${late.length ? `<span class="sep">·</span><span class="lt">${late.length} late</span>` : ""}${next ? `<span class="sep">·</span><span class="nx">next: ${esc(next.t.title)}, ${esc(next.t.at)}${next.st === "late" ? " (late)" : ""}</span>` : ""}<span class="open">See the day ›</span></button>`;
 }
 function promiseList() {
-  const xs = promisesToday(); if (!xs.length) return "";
+  const xs = promisesToday();
+  if (!xs.length) return `<div class="promised"><div class="ptitle"><b>Promised</b><span>none for today or tomorrow</span></div><p class="pnone">When a chat says it will do something later, it shows here with its time, and the Desk reminds that chat when the time comes.</p></div>`;
   const d = iso(TODAY()), now = new Date(), nowAt = now.getTime(), late = xs.filter((x) => x.st === "late").length, done = xs.filter((x) => x.st === "done").length;
   const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-  let h = `<div class="ptitle"><b>Promised today</b><span>${xs.length} promise${xs.length === 1 ? "" : "s"}${done ? ` · ${done} done` : ""}${late ? ` · <i class="late">${late} late</i>` : ""}</span></div><div class="plist">`, drawn = false;
+  let h = `<div class="ptitle"><b>Promised</b><span>today and tomorrow · ${xs.length} promise${xs.length === 1 ? "" : "s"}${done ? ` · ${done} done` : ""}${late ? ` · <i class="late">${late} late</i>` : ""}</span></div><div class="plist">`, drawn = false;
   for (const x of xs) {
     if (!drawn && x.when > nowAt) { h += `<div class="nowline"><span>${hhmm}</span><i></i></div>`; drawn = true; }
     const k = `${x.p.id}|${x.t.id}`, tm = x.t.due === d ? x.t.at : `${fmtShort(x.t.due)} ${x.t.at}`;
-    const pill = x.st === "done" ? `Done${x.t.doneAt ? " " + clock(x.t.doneAt) : ""}` : x.st === "late" ? `Late${x.t.reminded ? ` · reminded ${x.t.reminded === 1 ? "once" : "twice"}` : ""}` : `Due ${x.t.at}`;
+    const pill = x.st === "done" ? `Done${x.t.doneAt ? " " + clock(x.t.doneAt) : ""}` : x.st === "late" ? `Late${x.t.reminded ? ` · reminded ${x.t.reminded === 1 ? "once" : "twice"}` : ""}` : x.t.due === d ? `Due ${x.t.at}` : `Tomorrow ${x.t.at}`;
     h += `<div class="prow ${x.st}" data-pk="${esc(k)}"><span class="ptime">${esc(tm)}</span><i class="pdot"></i><span class="pwhat"><span class="pt">${esc(x.t.title)}</span><span class="pc"><span class="sw" style="background:${x.p.color}"></span>${esc(x.p.name)} · ${esc(trName(x.p, x.t.track))}</span>${x.t.said && x.t.said !== x.t.title ? `<span class="pq">\u201c${esc(x.t.said)}\u201d</span>` : ""}</span>`
       + `<span class="pend"><span class="pst ${x.st}">${esc(pill)}</span>${x.st === "done" ? "" : `<button class="btn small" data-pdone="${esc(k)}">Done</button><button class="linkbtn" data-pnot="${esc(k)}" title="Not something it promised: take it off">Not a promise</button>`}</span></div>`;
   }
