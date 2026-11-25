@@ -244,7 +244,7 @@ function render() {
     scroll[m.dataset.for] = { i, off: kids[i] ? kids[i].getBoundingClientRect().top - top : 0, px: m.scrollTop };
   });
   const bodyScroll = $("body")?.scrollTop;
-  renderRail(); renderMain(); save();
+  renderRail(); renderMain(); renderTimeline(); save();
   document.querySelectorAll(".msgs[data-for]").forEach((m) => {
     const v = scroll[m.dataset.for];
     if (v === undefined || v === "end") { m.scrollTop = m.scrollHeight; return; }
@@ -882,6 +882,40 @@ function promisesToday() {
     const when = new Date(`${t.due}T${t.at}:00`).getTime();
     return { p, t, when, st: t.status === "done" ? "done" : now >= when ? "late" : "due" };
   })).sort((a, b) => a.when - b.when);
+}
+// The project's timeline (25 Nov 2026, Diogo: "a place where I can see a timeline of all promises and future work
+// per project/lane"): a slim strip on the right edge of a project that opens, on hover, into its days ahead:
+// late, today, tomorrow, each day after, later. Promises with their time, cards with a due date, milestone dates,
+// each with its track. A promise opens its chat, a card the board, a milestone the roadmap.
+function renderTimeline() {
+  let el = $("tline"); const p = S.view === "today" ? null : proj();
+  document.querySelector(".app")?.classList.toggle("has-tl", !!p);
+  if (!p) { el?.remove(); return; }
+  if (!el) { document.querySelector(".app").insertAdjacentHTML("beforeend", '<aside class="tline glass" id="tline" aria-label="Timeline"></aside>'); el = $("tline"); el.onclick = timelineClick; }
+  const d = iso(TODAY()), tm = iso(new Date(TODAY().getTime() + 864e5)), now = Date.now(), onTrack = (x) => S.track === "all" || !x || x === S.track;
+  const items = [
+    ...p.todos.filter((t) => t.due && onTrack(t.track) && (t.status !== "done" || (t.promise && t.due === d))).map((t) => ({ k: t.promise ? "promise" : "card", id: t.id, d: t.due, at: t.at || "", title: t.title, tr: t.track, done: t.status === "done", late: t.status !== "done" && (t.due < d || (t.due === d && t.at && now >= new Date(`${t.due}T${t.at}:00`).getTime())), wait: t.status === "waiting" ? t.waitingOn : "" })),
+    ...p.milestones.filter((m) => m.due && m.status !== "done" && onTrack(m.track)).map((m) => ({ k: "milestone", id: m.id, d: m.due, at: "", title: m.title, tr: m.track, late: m.due < d })),
+  ].sort((a, b) => a.d.localeCompare(b.d) || (a.at || "99").localeCompare(b.at || "99"));
+  const later = iso(new Date(TODAY().getTime() + 14 * 864e5));
+  const group = (x) => x.d < d ? "Late" : x.d === d ? "Today" : x.d === tm ? "Tomorrow" : x.d > later ? "Later" : fmt(x.d);
+  const groups = []; for (const x of items) { const g = group(x); let y = groups.find((z) => z.g === g); if (!y) groups.push((y = { g, xs: [] })); y.xs.push(x); }
+  const lateN = items.filter((x) => x.late).length, todayN = items.filter((x) => x.d === d && !x.done).length;
+  const ICON = { promise: '<i class="tk tkp"></i>', card: '<i class="tk tkc"></i>', milestone: '<i class="tk tkm"></i>' };
+  const row = (x) => `<button type="button" class="tli${x.late ? " late" : ""}${x.done ? " done" : ""}" data-tl="${x.k}|${esc(x.id)}">${ICON[x.k]}<span class="tlt">${x.at ? `<b>${esc(x.at)}</b> ` : ""}${esc(x.title)}</span><span class="tlm">${esc(trName(p, x.tr) || "")}${x.wait ? ` · waiting on ${esc(x.wait)}` : ""}${x.k === "milestone" ? " · milestone" : x.k === "promise" ? " · promise" : ""}</span></button>`;
+  const html = `<div class="tlbar"><span class="tlv">Timeline</span>${todayN ? `<span class="tln">${todayN}</span>` : ""}${lateN ? '<span class="tld" title="Something is late"></span>' : ""}</div>`
+    + `<div class="tlbody"><div class="tlhead"><b>Timeline</b><span>${esc(p.name)}${S.track !== "all" ? " · " + esc(trName(p, S.track)) : ""}</span></div>`
+    + (groups.length ? groups.map((g) => `<div class="tlg${g.g === "Late" ? " late" : ""}"><div class="tlgh">${esc(g.g)}</div>${g.xs.map(row).join("")}</div>`).join("") : `<p class="tlnone">Nothing dated yet. Promises and cards with a due date show here, day by day.</p>`)
+    + `<div class="tlkey"><span><i class="tk tkp"></i>promise</span><span><i class="tk tkc"></i>card</span><span><i class="tk tkm"></i>milestone</span></div></div>`;
+  if (el._html !== html) { el.innerHTML = html; el._html = html; }
+}
+function timelineClick(e) {
+  const b = e.target.closest("[data-tl]"); if (!b) return;
+  const [k, id] = b.dataset.tl.split("|"), p = proj(); if (!p) return;
+  if (k === "milestone") { S.tab = "roadmap"; return render(); }
+  const t = p.todos.find((x) => x.id === id), s = k === "promise" && t && cardChat(p, t);
+  if (s) return openPane(paneKey(), s.id);
+  S.tab = "board"; render();
 }
 function promiseStrip(p) {
   const xs = promisesToday().filter((x) => x.p === p); if (!xs.length) return "";
