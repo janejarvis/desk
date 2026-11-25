@@ -851,3 +851,9 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 .tk.tke{border-radius:50%;border:2px solid var(--accent);box-sizing:border-box}
 .tli.late .tk.tke{border-color:var(--bad)}
 .pfrom{font-style:normal;font-weight:600;color:var(--ink-2)}
+.tlg.routine{background:var(--soft);border-radius:12px;padding:2px 6px 4px;margin-top:4px}
+.tli.duty .tlt{color:var(--ink-2)}
+.tli.duty.behind .tlm{color:var(--warn)}
+.tk.tkr{width:10px;height:10px;border:1.6px solid var(--ink-3);border-radius:50%;border-right-color:transparent;box-sizing:border-box;transform:rotate(45deg)}
+.tli.duty.behind .tk.tkr{border-color:var(--warn);border-right-color:transparent}
+.tlg.sentg .tlt{color:var(--ink-2)}

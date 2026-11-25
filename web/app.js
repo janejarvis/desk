@@ -894,19 +894,25 @@ function renderTimeline() {
   if (!el) { document.querySelector(".app").insertAdjacentHTML("beforeend", '<aside class="tline glass" id="tline" aria-label="Timeline"></aside>'); el = $("tline"); el.onclick = timelineClick; }
   const d = iso(TODAY()), tm = iso(new Date(TODAY().getTime() + 864e5)), now = Date.now(), onTrack = (x) => S.track === "all" || !x || x === S.track;
   const items = [
-    ...p.todos.filter((t) => t.due && onTrack(t.track) && (t.status !== "done" || (t.promise && t.due === d))).map((t) => ({ k: t.promise ? "promise" : t.expect ? "expect" : "card", id: t.id, d: t.due, at: t.at || "", title: t.title, tr: t.track, done: t.status === "done", late: t.status !== "done" && (t.due < d || (t.due === d && t.at && now >= new Date(`${t.due}T${t.at}:00`).getTime())), wait: t.status === "waiting" ? t.waitingOn : "" })),
+    // Routine duties (ongoing) aren't on the days: they have their own block, never red (25 Nov 2026, Diogo: "not
+    // just red items there all the time in late"). A card handed over (sent) is waiting on its reply, not late.
+    ...p.todos.filter((t) => t.due && t.status !== "ongoing" && onTrack(t.track) && (t.status !== "done" || (t.promise && t.due === d))).map((t) => ({ k: t.promise ? "promise" : t.expect ? "expect" : "card", id: t.id, d: t.due, at: t.at || "", title: t.title, tr: t.track, done: t.status === "done", sent: t.status === "sent" ? t.sentTo || "someone" : "", late: !["done", "sent"].includes(t.status) && (t.due < d || (t.due === d && t.at && now >= new Date(`${t.due}T${t.at}:00`).getTime())), wait: t.status === "waiting" ? t.waitingOn : "" })),
     ...p.milestones.filter((m) => m.due && m.status !== "done" && onTrack(m.track)).map((m) => ({ k: "milestone", id: m.id, d: m.due, at: "", title: m.title, tr: m.track, late: m.due < d })),
   ].sort((a, b) => a.d.localeCompare(b.d) || (a.at || "99").localeCompare(b.at || "99"));
   const later = iso(new Date(TODAY().getTime() + 14 * 864e5));
   const group = (x) => x.d < d ? "Late" : x.d === d ? "Today" : x.d === tm ? "Tomorrow" : x.d > later ? "Later" : fmt(x.d);
-  const groups = []; for (const x of items) { const g = group(x); let y = groups.find((z) => z.g === g); if (!y) groups.push((y = { g, xs: [] })); y.xs.push(x); }
+  const groups = []; for (const x of items) { const g = x.sent && x.d < d ? "Sent, waiting on a reply" : group(x); let y = groups.find((z) => z.g === g); if (!y) groups.push((y = { g, xs: [] })); y.xs.push(x); }
+  const duties = p.todos.filter((t) => t.status === "ongoing" && onTrack(t.track));
+  const EVERY = { daily: "every day", weekly: "every week", monthly: "every month" };
+  const duty = (t) => `<button type="button" class="tli duty${ongoingLate(t) ? " behind" : ""}" data-tl="card|${esc(t.id)}"><i class="tk tkr"></i><span class="tlt">${esc(t.title)}</span><span class="tlm">${esc(trName(p, t.track) || "")} · ${EVERY[t.every] || "every week"} · ${t.lastDone ? "last done " + esc(clock(t.lastDone)) : "not done yet"}${ongoingLate(t) ? " · due again" : ""}</span></button>`;
   const lateN = items.filter((x) => x.late).length, todayN = items.filter((x) => x.d === d && !x.done).length;
   const ICON = { promise: '<i class="tk tkp"></i>', expect: '<i class="tk tke"></i>', card: '<i class="tk tkc"></i>', milestone: '<i class="tk tkm"></i>' };
-  const row = (x) => `<button type="button" class="tli${x.late ? " late" : ""}${x.done ? " done" : ""}" data-tl="${x.k}|${esc(x.id)}">${ICON[x.k]}<span class="tlt">${x.at ? `<b>${esc(x.at)}</b> ` : ""}${esc(x.title)}</span><span class="tlm">${esc(trName(p, x.tr) || "")}${x.wait ? ` · ${x.k === "expect" ? "from" : "waiting on"} ${esc(x.wait)}` : ""}${x.k === "milestone" ? " · milestone" : x.k === "promise" ? " · promise" : x.k === "expect" ? " · expected" : ""}</span></button>`;
+  const row = (x) => `<button type="button" class="tli${x.late ? " late" : ""}${x.done ? " done" : ""}" data-tl="${x.k}|${esc(x.id)}">${ICON[x.k]}<span class="tlt">${x.at ? `<b>${esc(x.at)}</b> ` : ""}${esc(x.title)}</span><span class="tlm">${esc(trName(p, x.tr) || "")}${x.wait ? ` · ${x.k === "expect" ? "from" : "waiting on"} ${esc(x.wait)}` : ""}${x.sent ? ` · sent to ${esc(x.sent)}` : ""}${x.k === "milestone" ? " · milestone" : x.k === "promise" ? " · promise" : x.k === "expect" ? " · expected" : ""}</span></button>`;
   const html = `<div class="tlbar"><span class="tlv">Timeline</span>${todayN ? `<span class="tln">${todayN}</span>` : ""}${lateN ? '<span class="tld" title="Something is late"></span>' : ""}</div>`
     + `<div class="tlbody"><div class="tlhead"><b>Timeline</b><span>${esc(p.name)}${S.track !== "all" ? " · " + esc(trName(p, S.track)) : ""}</span></div>`
-    + (groups.length ? groups.map((g) => `<div class="tlg${g.g === "Late" ? " late" : ""}"><div class="tlgh">${esc(g.g)}</div>${g.xs.map(row).join("")}</div>`).join("") : `<p class="tlnone">Nothing dated yet. Promises and cards with a due date show here, day by day.</p>`)
-    + `<div class="tlkey"><span><i class="tk tkp"></i>promise</span><span><i class="tk tke"></i>expected</span><span><i class="tk tkc"></i>card</span><span><i class="tk tkm"></i>milestone</span></div></div>`;
+    + (duties.length ? `<div class="tlg routine"><div class="tlgh">Routine</div>${duties.map(duty).join("")}</div>` : "")
+    + (groups.length ? groups.map((g) => `<div class="tlg${g.g === "Late" ? " late" : g.g.startsWith("Sent") ? " sentg" : ""}"><div class="tlgh">${esc(g.g)}</div>${g.xs.map(row).join("")}</div>`).join("") : `<p class="tlnone">Nothing dated yet. Promises and cards with a due date show here, day by day.</p>`)
+    + `<div class="tlkey"><span><i class="tk tkp"></i>promise</span><span><i class="tk tke"></i>expected</span><span><i class="tk tkc"></i>card</span><span><i class="tk tkr"></i>routine</span><span><i class="tk tkm"></i>milestone</span></div></div>`;
   if (el._html !== html) { el.innerHTML = html; el._html = html; }
 }
 function timelineClick(e) {
