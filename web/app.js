@@ -383,7 +383,7 @@ function renderBoard() {
     <select id="a-kind" aria-label="Kind"><option value="">One-off</option><option value="daily">Ongoing · every day</option><option value="weekly">Ongoing · every week</option><option value="monthly">Ongoing · every month</option></select>
     <select id="a-prio" aria-label="Priority"><option value="1">P1</option><option value="2" selected>P2</option><option value="3">P3</option></select>
     <select id="a-wait" aria-label="Who"></select>
-    <input type="date" id="a-due" aria-label="Due date"><button class="btn primary" id="a-btn" disabled>Add</button></form><div id="lanes"></div>`;
+    <input type="date" id="a-due" aria-label="Due date"><button class="btn primary" id="a-btn" disabled>Add</button></form>${p ? promiseStrip(p) : ""}<div id="lanes"></div>`;
   b.innerHTML = h;
   const filt = (t) => (S.filter === "me" ? needsMe(t) : S.filter === "over" ? dueState(t) === "over" || ongoingLate(t) : true);
   const lanes = $("lanes");
@@ -402,6 +402,7 @@ function renderBoard() {
   } else lanes.innerHTML = `<div class="hscroll"><div class="cols six" style="${laneGrid()}">${cols(p, p.todos.filter(inTrack), true)}</div></div>`;
   b.querySelectorAll("[data-f]").forEach((x) => (x.onclick = () => { S.filter = x.dataset.f; render(); }));
   $("alldone").onchange = (e) => { S.allDone = e.target.checked; render(); };
+  if ($("pstrip")) $("pstrip").onclick = () => { S.view = "today"; render(); };
   b.querySelectorAll("[data-fold]").forEach((x) => (x.onclick = () => { const st = x.dataset.fold; SHUT[st] = !SHUT[st]; if (!SHUT[st]) delete SHUT[st]; shutSave(); render(); }));
   const fillWho = () => { const pp = P().find((x) => x.id === $("a-where").value.split("|")[0]); $("a-wait").innerHTML = `<option value="">Claude does it</option>${people(pp).map((n) => `<option value="${esc(n)}">Waiting on ${esc(n)}</option>`).join("")}`; };
   fillWho(); $("a-where").onchange = fillWho;
@@ -444,6 +445,7 @@ function card(p, t) {
   if (t.status === "done" && t.doneAt) meta += `<span class="pill ok">Done ${fmt(t.doneAt)}</span>`;
   if (t.status === "blocked" && t.why) meta += `<span class="pill blk">Blocked · ${esc(t.why)}</span>`;
   if (t.status === "waiting") meta += `<select class="waitsel" data-wait="${t.id}" data-p="${p.id}" aria-label="Waiting on">${people(p).map((n) => `<option${n === (t.waitingOn || ME) ? " selected" : ""}>${esc(n)}</option>`).join("")}</select>`;
+  if (t.promise && t.at && t.status !== "done") { const late = Date.now() >= new Date(`${t.due}T${t.at}:00`).getTime(); meta += `<span class="pill ${late ? "over" : "ok"}">Promised ${t.due === iso(TODAY()) ? t.at : fmt(t.due) + " " + t.at}${late ? " · late" : ""}</span>`; }
   if (t.status === "sent") meta += `<span class="pill sentp">Sent${t.sentTo ? " to " + esc(t.sentTo) : ""}${t.sentAt ? " · " + fmt(t.sentAt) : ""}</span>`;
   const area = [(S.view === "all" || p.tracks.length > 1) && S.track === "all" ? (S.view === "all" ? p.name + " · " : "") + trName(p, t.track) : "", ms ? ms.title : ""].filter(Boolean).join(" · ");
   if (area) meta += `<span>${esc(area)}</span>`;
@@ -732,7 +734,7 @@ function renderChats(b = $("body")) {
 function paneHTML({ p: sp, s }, key) {
   const label = `${sp.name} · ${trName(sp, s.track)}`; // shown on hover only: the pane header is just the session's name
   const st = stateOf(s), live = S.stream[s.id], msgs = S.msgs[s.id]?.list;
-  const mh = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => { const n = m.who === "me" && noteOf(m.text); return `<div class="m ${n ? "note" : m.who}">${n ? `<span class="nlab">${esc(n.label)}</span>${md(n.text)}` : m.who === "me" ? meText(m.text) : mdKept(m.text)}${m.who === "claude" ? fileCards(sp, s, msgs, m) : ""}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`; }).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
+  const mh = msgs == null ? '<div class="m sys">Loading…</div>' : msgs.length ? msgs.map((m) => { const n = m.who === "me" && noteOf(m.text); if (n?.mark) return `<div class="m dmark" data-dmark>${DMARK[n.mark]}<span class="ml"><b>${esc(n.label)}</b> · ${esc(n.short)}</span><span class="mt">${esc(clock(m.at))}</span><div class="mb">${md(n.text)}</div></div>`; return `<div class="m ${n ? "note" : m.who}">${n ? `<span class="nlab">${esc(n.label)}</span>${md(n.text)}` : m.who === "me" ? meText(m.text) : mdKept(m.text)}${m.who === "claude" ? fileCards(sp, s, msgs, m) : ""}${m.who === "claude" && m.tools ? `<span class="steps">${m.tools} step${m.tools === 1 ? "" : "s"}</span>` : ""}<span class="when">${esc(clock(m.at))}</span></div>`; }).join("") : `<div class="m sys">${s.started === false ? `New session in ${esc(s.cwd)}. Say what you need; it starts with your first message.` : "Nothing said yet."}</div>`;
   let body = "";   // what follows the messages: refused steps, steps for Diogo, commands, the live reply
   for (const [i, d] of (s.denied || []).entries()) body += `<div class="m denied"><div class="dh"><b>Not allowed from the Desk</b><span>${esc(d.tool)} · ${esc(clock(d.at))}</span></div><div class="dd">${esc(d.detail)}</div>${d.command ? `<code class="dc">${esc(d.command.length > 300 ? d.command.slice(0, 300) + "…" : d.command)}</code>` : ""}<div class="dx">Steps that need your OK are refused when sent from the Desk.${d.command ? " Run it yourself, or tell the session how to go on." : " Tell the session how to go on."}</div><div class="db">${d.command ? `<button type="button" class="btn small" data-runit="${esc(s.id)}|${i}">Run it myself (!)</button>` : ""}<button type="button" class="linkbtn" data-undeny="${esc(sp.id)}|${esc(s.id)}|${i}">Dismiss</button></div></div>`;
   for (const a of s.asks || []) body += askCard(sp, s, a);
@@ -872,13 +874,41 @@ function todayRow({ p, t }, d) {
     <div class="tx"><span class="tp"><span class="sw" style="background:${p.color}"></span>${esc(p.name)} · ${esc(trName(p, t.track))}</span><span class="tt">${esc(t.title)}</span><span class="tw">${[when, t.reach ? '<b class="myes">your yes</b>' : "", t.status === "blocked" && t.why ? esc(t.why) : ""].filter(Boolean).join(" · ")}</span></div>
     <div class="tb"><button class="btn small" data-tchat="${esc(k)}" title="Talk to its chat about it">Chat</button><button class="btn small" data-tdone="${esc(k)}" title="Mark it done">Done</button></div></div>`;
 }
+// Promised today (25 Nov 2026): what the chats said they would do by a time (`desk promise`), in time order, with a
+// line for now. Done / Not a promise are Diogo's; a click on a line opens that chat beside the list.
+function promisesToday() {
+  const d = iso(TODAY()), now = Date.now();
+  return P().flatMap((p) => p.todos.filter((t) => t.promise && t.due && t.at && (t.due === d || (t.due < d && t.status !== "done"))).map((t) => {
+    const when = new Date(`${t.due}T${t.at}:00`).getTime();
+    return { p, t, when, st: t.status === "done" ? "done" : now >= when ? "late" : "due" };
+  })).sort((a, b) => a.when - b.when);
+}
+function promiseStrip(p) {
+  const xs = promisesToday().filter((x) => x.p === p); if (!xs.length) return "";
+  const late = xs.filter((x) => x.st === "late"), next = late[0] || xs.find((x) => x.st === "due");
+  return `<button type="button" class="pstrip" id="pstrip"><b>Today</b><span class="sep">·</span><span>${xs.length} promised</span>${late.length ? `<span class="sep">·</span><span class="lt">${late.length} late</span>` : ""}${next ? `<span class="sep">·</span><span class="nx">next: ${esc(next.t.title)}, ${esc(next.t.at)}${next.st === "late" ? " (late)" : ""}</span>` : ""}<span class="open">See the day ›</span></button>`;
+}
+function promiseList() {
+  const xs = promisesToday(); if (!xs.length) return "";
+  const d = iso(TODAY()), now = new Date(), nowAt = now.getTime(), late = xs.filter((x) => x.st === "late").length, done = xs.filter((x) => x.st === "done").length;
+  const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  let h = `<div class="ptitle"><b>Promised today</b><span>${xs.length} promise${xs.length === 1 ? "" : "s"}${done ? ` · ${done} done` : ""}${late ? ` · <i class="late">${late} late</i>` : ""}</span></div><div class="plist">`, drawn = false;
+  for (const x of xs) {
+    if (!drawn && x.when > nowAt) { h += `<div class="nowline"><span>${hhmm}</span><i></i></div>`; drawn = true; }
+    const k = `${x.p.id}|${x.t.id}`, tm = x.t.due === d ? x.t.at : `${fmtShort(x.t.due)} ${x.t.at}`;
+    const pill = x.st === "done" ? `Done${x.t.doneAt ? " " + clock(x.t.doneAt) : ""}` : x.st === "late" ? `Late${x.t.reminded ? ` · reminded ${x.t.reminded === 1 ? "once" : "twice"}` : ""}` : `Due ${x.t.at}`;
+    h += `<div class="prow ${x.st}" data-pk="${esc(k)}"><span class="ptime">${esc(tm)}</span><i class="pdot"></i><span class="pwhat"><span class="pt">${esc(x.t.title)}</span><span class="pc"><span class="sw" style="background:${x.p.color}"></span>${esc(x.p.name)} · ${esc(trName(x.p, x.t.track))}</span>${x.t.said && x.t.said !== x.t.title ? `<span class="pq">\u201c${esc(x.t.said)}\u201d</span>` : ""}</span>`
+      + `<span class="pend"><span class="pst ${x.st}">${esc(pill)}</span>${x.st === "done" ? "" : `<button class="btn small" data-pdone="${esc(k)}">Done</button><button class="linkbtn" data-pnot="${esc(k)}" title="Not something it promised: take it off">Not a promise</button>`}</span></div>`;
+  }
+  return `<div class="promised">${h}</div></div>`;
+}
 function renderToday() {
   const { late, soon, rest, d } = todayCards();
   const n = late.length + soon.length + rest.length;
   for (const k of [...S.tsel]) { const [pid, id] = k.split("|"); if (!P().find((p) => p.id === pid)?.todos.some((t) => t.id === id && needsMe(t))) S.tsel.delete(k); }
   const sec = (title, xs) => (xs.length ? `<div class="tsec">${title}</div>` + xs.map((x) => todayRow(x, d)).join("") : "");
   const bar = S.tsel.size ? `<div class="tbar"><b>${S.tsel.size} selected</b><button class="btn primary small" id="tchatsel">Chat about these</button><button class="btn small" id="tdonesel">Done</button><button class="linkbtn" id="tclear">Clear</button></div>` : "";
-  const list = `<div class="tlist">${bar}${n ? sec("Late", late) + sec("This week", soon) + sec("No date", rest) : '<div class="empty">Nothing waits on you. ☀</div>'}${S.morning?.sent?.length && S.morning.date === d ? `<p class="mfoot">This morning, late work went back to ${S.morning.sent.length} chat${S.morning.sent.length === 1 ? "" : "s"}.</p>` : ""}</div>`;
+  const list = `${promiseList()}<div class="tlist">${bar}${n ? sec("Late", late) + sec("This week", soon) + sec("No date", rest) : '<div class="empty">Nothing waits on you. ☀</div>'}${S.morning?.sent?.length && S.morning.date === d ? `<p class="mfoot">This morning, late work went back to ${S.morning.sent.length} chat${S.morning.sent.length === 1 ? "" : "s"}.</p>` : ""}</div>`;
   const top = `<div class="top"><h1>Today</h1><span class="tsub">${n ? `${n} thing${n === 1 ? "" : "s"} wait on you` : ""}</span></div><div class="body chat-body today-body" id="body"><div class="todaywrap"><div id="tlistwrap"></div><div id="tchats"></div></div></div>`;
   if ($("main")._top !== top || !$("tchats")) { $("main").innerHTML = top; $("main")._top = top; }
   $("tlistwrap").innerHTML = list;
@@ -887,6 +917,9 @@ function renderToday() {
 }
 function wireToday() {
   const L = $("tlistwrap"), find = (k) => { const [pid, id] = k.split("|"); const p = P().find((x) => x.id === pid); return { p, t: p?.todos.find((x) => x.id === id) }; };
+  L.querySelectorAll("[data-pk]").forEach((r) => (r.onclick = (e) => { if (e.target.closest("button")) return; const { p, t } = find(r.dataset.pk), s = p && t && cardChat(p, t); if (!s) return toast("That chat isn't on this computer.", true); const key = paneKey(), ps = (S.panes[key] ||= []); if (!ps.includes(s.id)) { if (ps.length >= 3) ps.shift(); ps.push(s.id); } S.focus[key] = s.id; render(); }));
+  L.querySelectorAll("[data-pdone]").forEach((b) => (b.onclick = async () => { const { p, t } = find(b.dataset.pdone); if (t) { await op("todo.set", p.id, { id: t.id, status: "done", note: `${t.note ? t.note + "\n" : ""}Done (marked by ${ME}).` }).catch(() => {}); refresh(); } }));
+  L.querySelectorAll("[data-pnot]").forEach((b) => (b.onclick = async () => { const { p, t } = find(b.dataset.pnot); if (t) { await op("todo.remove", p.id, { id: t.id }).catch(() => {}); toast("Taken off: not a promise."); refresh(); } }));
   L.querySelectorAll("[data-tck]").forEach((c) => (c.onchange = () => { c.checked ? S.tsel.add(c.dataset.tck) : S.tsel.delete(c.dataset.tck); render(); }));
   L.querySelectorAll("[data-tchat]").forEach((b) => (b.onclick = () => chatAbout([b.dataset.tchat])));
   L.querySelectorAll("[data-tdone]").forEach((b) => (b.onclick = () => doneCards([b.dataset.tdone])));
@@ -1131,12 +1164,24 @@ async function attachFiles(pid, sid, files) {
 // a background job ended), the morning run, or another Desk session. Shown as a labelled card, not as his bubble
 // (20 Nov 2026: "handovers and messages between tracks need a different styling").
 function noteOf(t) {
-  const m = String(t || "").match(/^\[(Handed over on the Desk by ([^\]]+)|Morning run[^\]]*|From ([^\]]+))\]\s*/);
+  const m = String(t || "").match(/^\[(Handed over on the Desk by ([^\]]+)|Morning run[^\]]*|Reminder from the Desk|From ([^\]]+))\]\s*/);
   if (!m) return null;
+  // The Desk's own notes (a button pressed, a job ended, the morning run, a promise reminder) are one small line in
+  // the thread, opened with a click (25 Nov 2026, Diogo: "I don't want the messages filling up my chat thread").
+  const body = t.slice(m[0].length);
+  if (m[1] === "Reminder from the Desk") return { label: "Reminder", mark: "clock", text: body, short: (body.match(/^- \[[^\]]+\] ([^,\n]+)/m)?.[1] || body.split("\n")[0]).slice(0, 90) };
+  if (m[1].startsWith("Morning run")) return { label: "Morning run", mark: "sun", text: body, short: `${(body.match(/^- \[/gm) || []).length || ""} card${(body.match(/^- \[/gm) || []).length === 1 ? "" : "s"} due or late`.trim() };
+  if (m[3] && /^the Desk$/.test(m[3])) return { label: "Desk", mark: "check", text: body, short: (body.split(/(?<=[.!?])\s/)[0] || "").slice(0, 90) };
   const who = (x) => { const y = x.replace(/^the /, ""); return y.replace(/ \(([^)]+)\)$/, (_, tr) => y.toLowerCase().startsWith(tr.toLowerCase()) ? "" : ` · ${tr}`); };
   const label = m[2] ? `Handover from ${who(m[2])}` : m[1].startsWith("Morning run") ? "Morning run" : /^the Desk\b/.test(m[3]) ? "Desk" : `From ${who(m[3])}`;
   return { label, text: t.slice(m[0].length) };
 }
+document.addEventListener("click", (e) => { const d = e.target.closest?.("[data-dmark]"); if (d && !e.target.closest(".mb a")) d.classList.toggle("open"); });
+const DMARK = {
+  clock: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1.5"/></svg>',
+  sun: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="2.6"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1"/></svg>',
+  check: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3 7-7"/></svg>',
+};
 // What she sees of her own message: the text, then the attachments as thumbnails or file chips.
 function meText(t) {
   const i = t.indexOf(ATTACH_HEAD);

@@ -253,6 +253,28 @@ function tidyTmp() {
 if (MAC) { setTimeout(tidyTmp, 30e3); setInterval(tidyTmp, 3600e3).unref?.(); }
 // Every 2 minutes: no Chrome extension connection → start Chrome in the background (lib/chrome.mjs), so chats keep it.
 if (MAC && process.env.DESK_CHROME !== "off") setInterval(() => { if (!chromeExt.connected()) chromeExt.ensure({ wait: 15000 }).catch(() => {}); }, 120e3).unref?.();
+// ---- promises (25 Nov 2026): at a promise's time, wake the chat that made it, with its own words ----
+// Only while the card is open and the chat isn't busy; one message per chat, however many came due. If it is still
+// open an hour after a reminder, once more; an hour after the second, it waits on Diogo instead.
+const hm = (d) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+function promiseRun() {
+  const now = Date.now(), due = new Map();
+  for (const p of loadAll()) for (const t of p.todos || []) {
+    if (!t.promise || t.status === "done" || t.status === "waiting" || !t.due || !t.at) continue;
+    const when = new Date(`${t.due}T${t.at}:00`).getTime(), last = Date.parse(t.remindedAt || "") || 0, n = t.reminded || 0;
+    if (now < when || (n && now - last < 60 * 60e3)) continue;
+    if (n >= 2) { try { run("todo.set", p.id, { id: t.id, status: "waiting", waitingOn: ME, note: `${t.note ? t.note + "\n" : ""}Missed after two reminders (${t.due} ${t.at}).` }); } catch {} continue; }
+    const s = p.sessions.find((x) => x.id === t.session || (x.previousIds || []).includes(t.session)) || p.sessions.find((x) => x.track === t.track && x.mine !== false);
+    if (!s || s.mine === false || runner.isBusy(s.id)) continue;
+    const k = `${p.id}|${s.id}`; (due.get(k) || due.set(k, { p, s, ts: [] }).get(k)).ts.push(t);
+  }
+  for (const { p, s, ts } of due.values()) {
+    const at = new Date(), one = (t) => `- [${t.id}] ${t.title}, promised for ${t.due === `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}-${String(at.getDate()).padStart(2, "0")}` ? t.at : `${t.due} ${t.at}`}${t.said && t.said !== t.title ? `, in your words: "${t.said}"` : ""}${t.reminded ? " (second reminder)" : ""}`;
+    const text = `[Reminder from the Desk] It's ${hm(at)}. ${ts.length === 1 ? "You promised this and it isn't done:" : "You promised these and they aren't done:"}\n${ts.map(one).join("\n")}\nDo it now and close it: desk promise done <id> --proof "<what shows it's done>". If it can't be done now, move it with the reason: desk promise move <id> --at HH:MM --why "<why>". Only ${ME} can drop a promise.`;
+    try { sendTo(p.id, s.id, text, { auto: true }); for (const t of ts) run("todo.set", p.id, { id: t.id, reminded: (t.reminded || 0) + 1, remindedAt: at.toISOString() }); } catch {}
+  }
+}
+if (process.env.DESK_PROMISES !== "off") setInterval(promiseRun, 60e3).unref?.();
 // Every 2 minutes: renew the everyday Claude sign-in just before it runs out (lib/runner.mjs keepLogin).
 if (MAC && process.env.DESK_KEEP_LOGIN !== "off") setInterval(() => runner.keepLogin((m) => console.log(new Date().toISOString(), m)), 120e3).unref?.();
 if (process.env.DESK_MORNING !== "off") setInterval(() => { const n = new Date(); if (n.getHours() >= 8 && readMorning()?.date !== morningMod.today()) morningRun(); }, 60e3).unref?.();

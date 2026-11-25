@@ -10,6 +10,7 @@
 // Never runs for headless runs (`claude -p`: the Desk tells those itself), temp folders, or when
 // DESK_HOOK_OFF=1. Never fails a session: every path exits 0.
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,7 +37,7 @@ const joinHint = (p) => `This folder belongs to ${p.name} on ${ME}'s Desk (the p
 
 const READ_ONLY_TOOLS = /^(Read|Grep|Glob|LS|WebSearch|WebFetch|ToolSearch|Skill|AskUserQuestion|TodoWrite|TaskList|TaskGet|ListAgents|ScheduleWakeup|EnterPlanMode|ExitPlanMode|ArtifactComments|ReportFindings)$/;
 const READ_ONLY_BASH = /^\s*(cd [^;&|]+(&&|;)\s*)?(cat|ls|head|tail|grep|rg|find|stat|wc|sed -n|awk|echo|pwd|which|file|du|df|git (status|log|diff|show|branch)|jq|sort|uniq|date|env|printenv|ps|lsof)\b/;
-const isDesk = (c) => c?.name === "Bash" && /(^|[;&|(\s])desk\s+(todo|milestone|meeting|track|join|file)\b/.test(String(c.input?.command || ""));
+const isDesk = (c) => c?.name === "Bash" && /(^|[;&|(\s])desk\s+(todo|milestone|meeting|track|join|file|promise)\b/.test(String(c.input?.command || ""));
 export function isWork(c) {
   const n = c?.name || "";
   if (READ_ONLY_TOOLS.test(n)) return false;
@@ -48,13 +49,13 @@ export function isWork(c) {
 }
 // This turn: work done, and whether `desk` was run. Walks back to the last real prompt.
 export function readTurn(lines) {
-  let work = 0, desk = false;
+  let work = 0, desk = false, promised = false, said = "";
   for (let i = lines.length - 1; i >= 0; i--) {
     const l = lines[i]; if (!l || l[0] !== "{") continue;
     let o; try { o = JSON.parse(l); } catch { continue; }
     if (o.isSidechain) continue;
     const m = o.message ?? {};
-    if (m.role === "assistant" && Array.isArray(m.content)) { for (const c of m.content) if (c?.type === "tool_use") { if (isDesk(c)) desk = true; else if (isWork(c)) work++; } continue; }
+    if (m.role === "assistant" && Array.isArray(m.content)) { for (const c of m.content) { if (c?.type === "tool_use") { if (isDesk(c)) { desk = true; if (/desk\s+promise\b/.test(String(c.input?.command || ""))) promised = true; } else if (isWork(c)) work++; } else if (c?.type === "text" && !said) said = c.text || ""; } continue; }
     if (m.role === "user") {
       const c = m.content;
       if (Array.isArray(c) && c.some((x) => x?.type === "tool_result")) continue;
@@ -62,7 +63,18 @@ export function readTurn(lines) {
       if (t && !t.startsWith("<") && !t.startsWith("Caveat") && !t.startsWith("Stop hook feedback")) break;
     }
   }
-  return { work, desk };
+  return { work, desk, promised, said };
+}
+
+// Promises (25 Nov 2026): "I'll do it tonight" in a reply, with no `desk promise` behind it, is a promise nothing will
+// keep: the chat stops existing when its reply ends. A cheap phrase check first, then a small model confirms it is
+// the chat committing to later work (not a program, not someone else), so a plain mention doesn't stop the reply.
+export const PROMISE = /\b(?:I'?ll|I will|I'm going to|I am going to)\b[^.!?\n]{0,120}?\b(later(?: today| on| this \w+)?|tonight|this (?:evening|afternoon)|tomorrow(?: morning)?|by (?:the )?end of (?:the )?day|end of (?:the )?day|after lunch|before lunch|in (?:an|\d+) (?:hour|hours|minutes))\b/i;
+function reallyPromise(text) {
+  if (process.env.DESK_PROMISE_CHECK === "off") return true;
+  const env = { ...process.env }; for (const k of Object.keys(env)) if (/^(CLAUDECODE|DESK_SESSION|DESK_PROJECT|DESK_TRACK)$/.test(k)) delete env[k];
+  const q = `Reply with only YES or NO. In the message below, does the assistant commit to doing something itself at a later time (later today, tonight, tomorrow, by some time), instead of doing it now? Answer NO if it only describes what a program, a schedule or another person will do, or asks permission.\n\n<message>\n${String(text).slice(-3000)}\n</message>`;
+  try { const r = spawnSync(process.env.DESK_CLAUDE || "claude", ["-p", q, "--model", "claude-haiku-4-5-20251001", "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config", "--tools", ""], { encoding: "utf8", env, timeout: 30000 }); return /^\s*YES/i.test(r.stdout || ""); } catch { return false; }
 }
 
 const FROM_DESK = !!process.env.DESK_PROJECT; // a message sent from the Desk (claude -p, rules attached)
@@ -104,7 +116,12 @@ try {
     if (p.stop_hook_active ?? p.stopHookActive) process.exit(0);
     const path = p.transcript_path ?? p.transcriptPath; if (!path) process.exit(0);
     let lines; try { lines = readFileSync(path, "utf8").split("\n"); } catch { process.exit(0); }
-    const { work, desk } = readTurn(lines.slice(-4000));
+    const { work, desk, promised, said } = readTurn(lines.slice(-4000));
+    const text = String(p.last_assistant_message || said || ""), m = !promised && text.match(PROMISE);
+    if (m && reallyPromise(text)) {
+      process.stdout.write(JSON.stringify({ decision: "block", reason: `You wrote "${m[0]}". You stop existing when this reply ends: nothing brings you back to it unless the Desk does. First, can you do it now? If you can, do it now. If not, record it so the Desk wakes you then: desk promise "<what>" --at HH:MM --said "<your words>" (or --at "tomorrow 09:00"), and update the Desk for anything else this turn changed. If it wasn't a promise, end the reply as it is.` }));
+      process.exit(0);
+    }
     const f = join(STATE, sid.replace(/[^\w-]/g, "") + ".json");
     let st = {}; try { st = JSON.parse(readFileSync(f, "utf8")); } catch {}
     const now = Date.now();

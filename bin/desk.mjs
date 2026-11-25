@@ -27,6 +27,14 @@ To-dos (statuses: ${STATUSES.join(", ")})
   desk todo add "<title>" --status ongoing --every weekly
   desk todo tick <id>                         did it again (e.g. logged today's hours)
 
+Promises (you stop existing between turns: nothing brings you back to a "later" unless the Desk does)
+  desk promise "<what>" --at HH:MM|"tomorrow HH:MM"|"YYYY-MM-DD HH:MM" --said "<your own words>"
+                                              the Desk wakes this chat at that time with your words
+  desk promise done <id> --proof "<what shows it's done>"
+  desk promise move <id> --at <time> --why "<why it moved>"
+    First ask yourself whether you can do it now; if you can, do it instead of promising.
+    Only ${ME} can drop a promise.
+
 Roadmap (milestone status: done, now, next)
   desk milestone add "<title>" [--track T] [--status S] [--due YYYY-MM-DD] [--note TEXT]
   desk milestone <id> <status>
@@ -211,11 +219,37 @@ try {
   else if (cmd === "restart") { // safe at any time: replies keep running and the new server picks them up
     try { execFileSync("launchctl", ["kickstart", "-k", `gui/${process.getuid()}/com.blendd.desk`], { stdio: "ignore" }); say("Desk restarted."); }
     catch { fail("The Desk isn't installed as a login item. Run: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.blendd.desk.plist"); } }
-  else if (cmd === "todo") {
+  else if (cmd === "promise") {
+    // When: "HH:MM" (today, or tomorrow if that time has passed), "tomorrow HH:MM", or "YYYY-MM-DD HH:MM".
+    const when = (v) => {
+      const m = String(v || "").trim().match(/^(?:(tomorrow)\s+|(\d{4}-\d{2}-\d{2})\s+)?(\d{1,2}):(\d{2})$/i);
+      if (!m) fail('When is HH:MM, "tomorrow HH:MM" or "YYYY-MM-DD HH:MM" (e.g. --at 18:00).');
+      const at = `${m[3].padStart(2, "0")}:${m[4]}`, d = new Date(), ymd = (x) => `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+      if (m[2]) return { due: m[2], at };
+      if (m[1] || at <= `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`) d.setDate(d.getDate() + 1);
+      return { due: ymd(d), at };
+    };
+    if (a1 === "done") {
+      if (!flags.proof) fail(`Close a promise with what shows it's done: desk promise done ${a2 || "<id>"} --proof "<the commit, the page, the number…>"`);
+      const pid = owner("todos", a2), old = load(pid).todos.find((x) => x.id === a2), t = run("todo.set", pid, { id: a2, status: "done", note: `${old?.note ? old.note + "\n" : ""}Done: ${flags.proof}` }); say(`[${t.id}] ${t.title}: done`);
+    } else if (a1 === "move") {
+      if (!flags.at || !flags.why) fail(`Move a promise with a new time and the reason: desk promise move ${a2 || "<id>"} --at 18:00 --why "<why>"`);
+      const pid = owner("todos", a2), w = when(flags.at), old = load(pid).todos.find((x) => x.id === a2);
+      if (!old?.promise) fail(`[${a2}] isn't a promise.`);
+      const t = run("todo.set", pid, { id: a2, ...w, reminded: 0, remindedAt: "", status: old.status === "waiting" ? "doing" : undefined, note: `${old.note ? old.note + "\n" : ""}Moved from ${old.due} ${old.at} to ${w.due} ${w.at}: ${flags.why}` });
+      say(`[${t.id}] ${t.title}: now ${t.due} ${t.at}`);
+    } else if (a2 === undefined && a1 && !["done", "move"].includes(a1)) {
+      if (!flags.at) fail('Say when: desk promise "<what>" --at 18:00 --said "<your words>"');
+      const pid = project(), w = when(flags.at), me = mine()?.s.id || process.env.DESK_SESSION || "";
+      const t = run("todo.add", pid, { title: a1, track: track(pid), status: "doing", promise: true, ...w, said: flags.said || a1, session: me, source: "claude" });
+      say(`Promised [${t.id}] ${t.title} for ${t.due} ${t.at}. The Desk wakes this chat then with your words. Close it with desk promise done ${t.id} --proof "…".`);
+    } else fail('Try: desk promise "<what>" --at 18:00 --said "<your words>" · desk promise done <id> --proof "…" · desk promise move <id> --at … --why "…"');
+  } else if (cmd === "todo") {
     if (a1 === "add") { const pid = project(); const t = run("todo.add", pid, { ...strip(todoFields()), title: a2, track: track(pid), source: "claude", session: mine()?.s.id || process.env.DESK_SESSION || "" }); say(`Added [${t.id}] ${t.title} (${t.status})${t.due ? "" : t.status === "ongoing" || t.status === "done" ? "" : ". It has no date: if it's a \"later\" step, give it one with desk todo set " + t.id + " --due YYYY-MM-DD"}`); }
     else if (a1 === "tick") { const t = run("todo.tick", owner("todos", a2), { id: a2 }); say(`[${t.id}] ${t.title}: done again ${t.lastDone.slice(0, 10)}`); }
-    else if (a1 === "remove") { run("todo.remove", owner("todos", a2), { id: a2 }); say("Removed."); }
+    else if (a1 === "remove") { const pid = owner("todos", a2); if (load(pid).todos.find((x) => x.id === a2)?.promise) fail(`[${a2}] is a promise: only ${ME} can drop it. Ask with desk ask, or close it with desk promise done ${a2} --proof "…".`); run("todo.remove", pid, { id: a2 }); say("Removed."); }
     else if (a1 === "set") { const pid = owner("todos", a2); const t = run("todo.set", pid, { ...strip(todoFields()), id: a2, track: flags.track }); say(`[${t.id}] ${t.title}: ${t.status}`); }
+    else if (a1 && a2 === "done" && load(owner("todos", a1)).todos.find((x) => x.id === a1)?.promise) fail(`[${a1}] is a promise: close it with desk promise done ${a1} --proof "<what shows it's done>".`);
     else if (a1 && a2 && STATUSES.includes(a2)) { const t = run("todo.set", owner("todos", a1), { ...strip(todoFields()), id: a1, status: a2 }); say(`[${t.id}] ${t.title}: ${t.status}`); }
     else fail("Try: desk todo add \"<title>\" · desk todo <id> <status> · desk help");
   } else if (cmd === "milestone") {
