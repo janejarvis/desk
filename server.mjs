@@ -249,6 +249,12 @@ function morningRun({ force = false, send = true } = {}) {
 function tidyTmp() {
   const dir = join("/private/tmp", `claude-${process.getuid?.() ?? 501}`, "bash-edit-diff");
   try { for (const f of readdirSync(dir)) { const pth = join(dir, f); try { if (Date.now() - statSync(pth).mtimeMs > 6 * 3600e3) rmSync(pth, { recursive: true, force: true }); } catch {} } } catch {}
+  // Website deploy copies the chats make with mktemp (a built site: _headers or 404 inside) and leave behind:
+  // 28 of them on 25 Nov 2026, with the disk at 586 MB free and every chat crawling. Gone after a day.
+  try { const T = tmpdir(); for (const f of readdirSync(T)) { if (!/^tmp\./.test(f)) continue; const pth = join(T, f); try { if (Date.now() - statSync(pth).mtimeMs > 864e5 && (existsSync(join(pth, "_headers")) || existsSync(join(pth, "404")) || existsSync(join(pth, "404.html")))) rmSync(pth, { recursive: true, force: true }); } catch {} } } catch {}
+  // Under 10 GB free: tell Diogo once a day, before it gets to "everything is slow".
+  try { const free = +execFileSync("df", ["-k", "/System/Volumes/Data"], { encoding: "utf8" }).trim().split("\n").pop().split(/\s+/)[3] * 1024, day = new Date().toDateString();
+    if (free < 10 * 2 ** 30 && tidyTmp.warned !== day) { tidyTmp.warned = day; const msg = `Only ${(free / 2 ** 30).toFixed(1)} GB free on this Mac: chats slow down when the disk is this full. Ask the Desk chat to clear space.`; if (desk.notify) desk.notify("Desk · Disk almost full", msg); else execFile("osascript", ["-e", `display notification ${JSON.stringify(msg)} with title "Desk · Disk almost full"`], () => {}); } } catch {}
 }
 if (MAC) { setTimeout(tidyTmp, 30e3); setInterval(tidyTmp, 3600e3).unref?.(); }
 // Every 2 minutes: no Chrome extension connection → start Chrome in the background (lib/chrome.mjs), so chats keep it.
