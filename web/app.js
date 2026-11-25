@@ -273,13 +273,17 @@ function renderRail() {
   const newBtn = (kind, label) => `<button class="ritem newproj" data-new="${kind}" title="${label}"><span class="pav plus">+</span><span class="nm">${label}</span></button>`;
   const shared = D.sync?.shared || P().some((p) => p.shared) || D.sync?.ok === false;
   let h = `<button class="ritem todayitem" aria-current="${S.view === "today"}" data-go="today" title="Today: what waits on you"><span class="pav sun">☀</span><span class="nm">Today</span></button><div class="rsep"></div>`;
-  h += `<div class="rail-label">Projects</div>` + P().filter((p) => kindOf(p) === "project").map((p) => railItem(p, unread)).join("") + newBtn("project", "New project");
+  // The Desk's own project sits apart, at the very bottom of the sidebar, level with the chat box (25 Nov 2026, Diogo).
+  h += `<div class="rail-label">Projects</div>` + P().filter((p) => kindOf(p) === "project" && p.id !== "desk").map((p) => railItem(p, unread)).join("") + newBtn("project", "New project");
   if (shared) {
     const sales = P().filter((p) => kindOf(p) === "sales");
     if (sales.length) h += `<div class="rsep"></div><div class="rail-label">Sales<span class="rshared">shared</span></div>` + sales.map((p) => railItem(p, unread)).join("");
     h += `<div class="rsep"></div><div class="rail-label">Clients<span class="rshared">shared</span></div>` + P().filter((p) => kindOf(p) === "client").map((p) => railItem(p, unread)).join("") + newBtn("client", "New client");
   }
   r.innerHTML = h;
+  if (!$("raildesk")) $("railfoot").insertAdjacentHTML("afterend", '<div class="rail-desk" id="raildesk"></div>');
+  const dp = P().find((p) => p.id === "desk" && kindOf(p) === "project");
+  $("raildesk").innerHTML = dp ? railItem(dp, unread) : "";
   const all = P().flatMap((p) => p.sessions);
   const nbtn = "Notification" in window && Notification.permission === "default" ? `<button class="linkbtn" id="notifyon">Turn on notifications</button><br>` : "";
   const sy = D.sync || {}, other = ME === "Diogo" ? "João" : "Diogo";
@@ -291,8 +295,8 @@ function renderRail() {
   $("ghuser")?.addEventListener("input", (e) => { S.ghDraft = e.target.value; });   // what's typed survives the sidebar redrawing
   $("morningbtn").onclick = () => { S.view = "today"; render(); };
   $("syncnow")?.addEventListener("click", async (e) => { const github = $("ghuser")?.value.trim(); if (!github) return toast("Type your GitHub username first (the account that accepted the invite).", true); e.target.textContent = "Connecting… (a GitHub sign-in window may open)"; e.target.disabled = true; try { await api("/api/sync", { github }); } catch {} refresh(); });
-  r.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { if (S.view !== b.dataset.go) { S.view = b.dataset.go; S.track = "all"; S.sheet = false; S.filter = "all"; S.msForm = null; S.lead = null; if (proj()?.kind === "sales") S.tab = "leads"; else if (["leads", "outreach"].includes(S.tab)) S.tab = "chats"; } render(); }));
-  r.querySelectorAll("[data-track]").forEach((b) => (b.onclick = () => { S.track = S.track === b.dataset.track ? "all" : b.dataset.track; S.msForm = null; render(); }));
+  [r, $("raildesk")].forEach((root) => root.querySelectorAll("[data-go]").forEach((b) => (b.onclick = () => { if (S.view !== b.dataset.go) { S.view = b.dataset.go; S.track = "all"; S.sheet = false; S.filter = "all"; S.msForm = null; S.lead = null; if (proj()?.kind === "sales") S.tab = "leads"; else if (["leads", "outreach"].includes(S.tab)) S.tab = "chats"; } render(); })));
+  [r, $("raildesk")].forEach((root) => root.querySelectorAll("[data-track]").forEach((b) => (b.onclick = () => { S.track = S.track === b.dataset.track ? "all" : b.dataset.track; S.msForm = null; render(); })));
   r.querySelectorAll("[data-new]").forEach((b) => (b.onclick = () => newProject(b.dataset.new)));
 }
 

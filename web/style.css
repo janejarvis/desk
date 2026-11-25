@@ -857,3 +857,4 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 .tk.tkr{width:10px;height:10px;border:1.6px solid var(--ink-3);border-radius:50%;border-right-color:transparent;box-sizing:border-box;transform:rotate(45deg)}
 .tli.duty.behind .tk.tkr{border-color:var(--warn);border-right-color:transparent}
 .tlg.sentg .tlt{color:var(--ink-2)}
+.rail-desk{padding:6px 0 2px;border-top:1px solid var(--hair);margin-top:6px}
