@@ -76,7 +76,7 @@ export const EXPECT = /\b(?:should (?:arrive|come|land|reply|answer|be back)|(?:
 function reallyExpect(text) {
   if (process.env.DESK_PROMISE_CHECK === "off") return true;
   const env = { ...process.env }; for (const k of Object.keys(env)) if (/^(CLAUDECODE|DESK_SESSION|DESK_PROJECT|DESK_TRACK)$/.test(k)) delete env[k];
-  const q = `Reply with only YES or NO. In the message below, does the assistant say that someone else (a person, a client, a colleague) is expected to send, reply, decide or deliver something by a particular time or day? Answer NO if it is only something the assistant itself will do, or a program or schedule.\n\n<message>\n${String(text).slice(-3000)}\n</message>`;
+  const q = `Reply with only YES or NO. In the message below, does the assistant say that someone else (a person, a client, a colleague) is expected to send, reply, decide or deliver something by a particular time or day that is still ahead? Answer NO if it is only something the assistant itself will do, a program or schedule, a date that has already passed, or a request the assistant just sent to another chat.\n\n<message>\n${String(text).slice(-3000)}\n</message>`;
   try { const r = spawnSync(process.env.DESK_CLAUDE || "claude", ["-p", q, "--model", "claude-haiku-4-5-20251001", "--no-session-persistence", "--setting-sources", "", "--strict-mcp-config", "--tools", ""], { encoding: "utf8", env, timeout: 30000 }); return /^\s*YES/i.test(r.stdout || ""); } catch { return false; }
 }
 function reallyPromise(text) {
