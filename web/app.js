@@ -764,7 +764,8 @@ function paneHTML({ p: sp, s }, key) {
    tap, several (or several choices) need Send answers. Typing a message instead answers it in words. */
 // The chat's model and effort (27 Nov 2026, Diogo: "a drop down on each desk lane so I can choose what Claude model
 // to use and level"). Empty means the Mac's default. It applies from the chat's next message.
-const MODEL_OPTS = [["", "Default"], ["fable", "Fable 5.1"], ["opus", "Opus 5.5"], ["opus[1m]", "Opus 1M"], ["sonnet", "Sonnet 5"], ["haiku", "Haiku 4.5"]];
+// The short names always mean Anthropic's newest of each (checked 27 Nov 2026 with Claude Code 2.1.332).
+const MODEL_OPTS = [["", "Default"], ["fable", "Fable 5.2"], ["opus", "Opus 5.5"], ["opus[1m]", "Opus 1M"], ["sonnet", "Sonnet 5.5"], ["haiku", "Haiku 5.5"]];
 const EFFORT_OPTS = [["", "Default"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]];
 // One small pill on the chat's header ("Opus 1M · High"); a click opens the two short lists (27 Nov 2026: two menus
 // crowded out the chat's name when four chats were open).
