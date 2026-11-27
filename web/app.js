@@ -748,12 +748,12 @@ function paneHTML({ p: sp, s }, key) {
   if (!live?.active) for (const b of s.bg || []) body += `<div class="m claude streaming bgjob"><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">Working in the background · ${esc(b.what)} · since ${esc(clock(b.at))}</span></span><span class="bgnote">${esc(s.name)} will report here when it ends.</span></div>`;
   if (live?.active) body += `<div class="m claude streaming" data-live="${esc(s.id)}"><span class="tx">${md(unsaid(live.text, msgs))}</span><span class="workline"><span class="typing"><i></i><i></i><i></i></span><span class="wk">${esc(workLine(live))}</span></span><ul class="feed">${feedHTML(live)}</ul></div>`;
   // Kept so a redraw can add just the new messages and swap just the cards after them (renderChats).
-  (S.paneParts ||= {})[s.id] = { mh, tail: body, head: JSON.stringify([s.name, s.cwd, s.mine, D.voice]) };
+  (S.paneParts ||= {})[s.id] = { mh, tail: body, head: JSON.stringify([s.name, s.cwd, s.mine, D.voice, s.model, s.effort]) };
   body = mh + `<div class="mtail">${body}</div>`;
   return `<section class="pane-c${S.focus[key] === s.id && S.panes[key].length > 1 ? " focus" : ""}${st === "waiting" ? " unread" : ""}" data-pane="${s.id}">
    <div class="convhead"><div class="l"><span class="sw" style="background:${sp.color}" title="${esc(label)}"></span>
      <input class="sname" data-rn="${s.id}" data-p="${sp.id}" id="sn-${s.id}" value="${esc(s.name)}" aria-label="Session name" maxlength="40" title="${esc(s.cwd)}"></div>
-     <div class="hr"><span class="state ${st}">${s.question ? "Asks you" : st === "working" ? "Working" : st === "waiting" ? "New reply" : "Idle"}</span><button class="x" data-close="${s.id}" aria-label="Close this pane" title="Close pane">×</button></div></div>
+     <div class="hr">${s.mine !== false ? modelPick(sp, s) : ""}<span class="state ${st}">${s.question ? "Asks you" : st === "working" ? "Working" : st === "waiting" ? "New reply" : "Idle"}</span><button class="x" data-close="${s.id}" aria-label="Close this pane" title="Close pane">×</button></div></div>
    <div class="msgs" data-for="${s.id}">${body}</div>
    <div class="helpers" data-helpers="${esc(s.id)}">${helpersHTML(s.id)}</div>
    <div class="chips" data-chips="${esc(s.id)}">${chipsHTML(s.id)}</div>
@@ -762,6 +762,11 @@ function paneHTML({ p: sp, s }, key) {
 /* ---------- Claude's questions (its AskUserQuestion tool), answered with buttons ----------
    bin/claude-keeper.mjs holds the question while Diogo picks; one question with one choice sends on the
    tap, several (or several choices) need Send answers. Typing a message instead answers it in words. */
+// The chat's model and effort (27 Nov 2026, Diogo: "a drop down on each desk lane so I can choose what Claude model
+// to use and level"). Empty means the Mac's default. It applies from the chat's next message.
+const MODEL_OPTS = [["", "Default model"], ["fable", "Fable 5.1"], ["opus", "Opus 5.5"], ["opus[1m]", "Opus 5.5 · 1M"], ["sonnet", "Sonnet 5"], ["haiku", "Haiku 4.5"]];
+const EFFORT_OPTS = [["", "Default effort"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]];
+const modelPick = (sp, s) => `<select class="msel" data-mdl="${esc(sp.id)}|${esc(s.id)}" aria-label="Model" title="Claude model for this chat (from its next message)">${MODEL_OPTS.map(([v, l]) => `<option value="${esc(v)}"${(s.model || "") === v ? " selected" : ""}>${l}</option>`).join("")}</select><select class="msel" data-eff="${esc(sp.id)}|${esc(s.id)}" aria-label="Effort" title="How hard it thinks (from its next message)">${EFFORT_OPTS.map(([v, l]) => `<option value="${esc(v)}"${(s.effort || "") === v ? " selected" : ""}>${l}</option>`).join("")}</select>`;
 const qMulti = (q) => q.questions.length > 1 || q.questions.some((x) => x.multiSelect);
 // A question with choices (AskUserQuestion), as a list: one row per option, and a last row to write your own
 // answer (23 Nov 2026, Diogo: "we need the last option of the question to be a free text input").
@@ -1254,6 +1259,7 @@ function wireChats(p, key) {
   b.querySelectorAll("[data-qopt]").forEach((x) => (x.onclick = () => pickAnswer(x.dataset.qopt)));
   b.querySelectorAll("[data-qin]").forEach((x) => { x.oninput = () => typeAnswer(x); x.onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); const [pid, sid] = x.dataset.qin.split("|"); if (!qMulti(findS(sid)?.s.question || { questions: [] })) sendAnswers(pid, sid); } }; });
   b.querySelectorAll("[data-qgo]").forEach((x) => (x.onclick = () => { const [pid, sid] = x.dataset.qgo.split("|"); sendAnswers(pid, sid); }));
+  b.querySelectorAll("[data-mdl],[data-eff]").forEach((x) => (x.onchange = () => { const [pid, sid] = (x.dataset.mdl || x.dataset.eff).split("|"); op("session.set", pid, { id: sid, [x.dataset.mdl ? "model" : "effort"]: x.value }).then(() => toast(`${x.dataset.mdl ? "Model" : "Effort"} set: ${x.selectedOptions[0].textContent}. It applies from this chat's next message.`)).catch(() => {}); }));
   b.querySelectorAll("[data-qsend]").forEach((x) => (x.onclick = () => { const [pid, sid] = x.dataset.qsend.split("|"); sendAnswers(pid, sid); }));
   b.querySelectorAll("[data-ask]").forEach((x) => (x.onclick = () => { const [pid, sid, id, answer] = x.dataset.ask.split("|"); answerAsk(pid, sid, id, answer); }));
   b.querySelectorAll("[data-undeny]").forEach((x) => (x.onclick = async () => { const [pid, sid, i] = x.dataset.undeny.split("|"); const s = findS(sid)?.s; if (!s) return; await op("session.set", pid, { id: sid, denied: (s.denied || []).filter((_, k) => k !== +i) }).catch(() => {}); refresh(); }));
