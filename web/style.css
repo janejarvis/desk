@@ -860,5 +860,14 @@ h1{margin:0;font-size:20px;letter-spacing:-.03em;line-height:1.2}
 .tli.duty.behind .tk.tkr{border-color:var(--warn);border-right-color:transparent}
 .tlg.sentg .tlt{color:var(--ink-2)}
 .rail-desk{padding:6px 0 2px;border-top:1px solid var(--hair);margin-top:6px}
-.convhead .msel{font:inherit;font-size:11.5px;color:var(--ink-2);background:transparent;border:1px solid transparent;border-radius:8px;padding:2px 2px;max-width:112px;cursor:pointer}
-.convhead .msel:hover,.convhead .msel:focus{border-color:var(--hair);background:var(--soft);outline:none}
+.convhead .mpick{font:inherit;font-size:11px;font-weight:500;color:var(--ink-2);background:var(--soft);border:1px solid var(--hair);border-radius:999px;padding:2px 8px;white-space:nowrap;cursor:pointer;flex:none;display:inline-flex;align-items:center;gap:4px}
+.convhead .mpick:hover{border-color:var(--accent);color:var(--ink)}
+.mcar{font-size:9px;opacity:.6}
+.mmenu{position:fixed;z-index:80;width:210px;padding:8px;border-radius:14px;box-shadow:var(--shadow);background:var(--glass-2);display:flex;flex-direction:column}
+.mmh{font:600 10.5px/1 var(--font);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);padding:8px 8px 4px}
+.mmi{font:inherit;font-size:13px;text-align:left;background:transparent;border:0;border-radius:8px;padding:6px 8px;cursor:pointer;color:var(--ink)}
+.mmi:hover{background:var(--soft)}.mmi.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.mmi small{color:var(--ink-3);font-weight:400}
+.mmn{margin:6px 8px 2px;font-size:11px;color:var(--ink-3)}
+.convhead .l{flex:1 1 90px;min-width:90px}
+.convhead .hr{gap:5px;flex:0 1 auto;min-width:0}

@@ -764,9 +764,22 @@ function paneHTML({ p: sp, s }, key) {
    tap, several (or several choices) need Send answers. Typing a message instead answers it in words. */
 // The chat's model and effort (27 Nov 2026, Diogo: "a drop down on each desk lane so I can choose what Claude model
 // to use and level"). Empty means the Mac's default. It applies from the chat's next message.
-const MODEL_OPTS = [["", "Default model"], ["fable", "Fable 5.1"], ["opus", "Opus 5.5"], ["opus[1m]", "Opus 5.5 · 1M"], ["sonnet", "Sonnet 5"], ["haiku", "Haiku 4.5"]];
-const EFFORT_OPTS = [["", "Default effort"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]];
-const modelPick = (sp, s) => `<select class="msel" data-mdl="${esc(sp.id)}|${esc(s.id)}" aria-label="Model" title="Claude model for this chat (from its next message)">${MODEL_OPTS.map(([v, l]) => `<option value="${esc(v)}"${(s.model || "") === v ? " selected" : ""}>${l}</option>`).join("")}</select><select class="msel" data-eff="${esc(sp.id)}|${esc(s.id)}" aria-label="Effort" title="How hard it thinks (from its next message)">${EFFORT_OPTS.map(([v, l]) => `<option value="${esc(v)}"${(s.effort || "") === v ? " selected" : ""}>${l}</option>`).join("")}</select>`;
+const MODEL_OPTS = [["", "Default"], ["fable", "Fable 5.1"], ["opus", "Opus 5.5"], ["opus[1m]", "Opus 1M"], ["sonnet", "Sonnet 5"], ["haiku", "Haiku 4.5"]];
+const EFFORT_OPTS = [["", "Default"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]];
+// One small pill on the chat's header ("Opus 1M · High"); a click opens the two short lists (27 Nov 2026: two menus
+// crowded out the chat's name when four chats were open).
+const modelPick = (sp, s) => { const m = MODEL_OPTS.find(([v]) => v === (s.model || ""))[1], e = EFFORT_OPTS.find(([v]) => v === (s.effort || ""))[1];
+  return `<button type="button" class="mpick" data-mpick="${esc(sp.id)}|${esc(s.id)}" title="Claude model and effort for this chat">${s.model || s.effort ? `${esc(m)} · ${esc(e)}` : "Model"}<span class="mcar">▾</span></button>`; };
+function modelMenu(btn) {
+  document.getElementById("mmenu")?.remove();
+  const [pid, sid] = btn.dataset.mpick.split("|"), s = findS(sid)?.s; if (!s) return;
+  const row = (k, opts, cur) => `<div class="mmh">${k === "model" ? "Model" : "Effort"}</div>` + opts.map(([v, l]) => `<button type="button" class="mmi${(cur || "") === v ? " on" : ""}" data-mset="${k}|${esc(v)}">${esc(l)}${v === "" ? '<small> (the Mac\'s own)</small>' : ""}</button>`).join("");
+  document.body.insertAdjacentHTML("beforeend", `<div class="mmenu glass" id="mmenu">${row("model", MODEL_OPTS, s.model)}${row("effort", EFFORT_OPTS, s.effort)}<p class="mmn">Applies from this chat's next message.</p></div>`);
+  const mm = document.getElementById("mmenu"), r = btn.getBoundingClientRect();
+  mm.style.top = `${Math.round(r.bottom + 6)}px`; mm.style.left = `${Math.round(Math.max(8, Math.min(r.right - mm.offsetWidth, innerWidth - mm.offsetWidth - 8)))}px`;
+  mm.onclick = (e) => { const b = e.target.closest("[data-mset]"); if (!b) return; const [k, v] = b.dataset.mset.split("|"); op("session.set", pid, { id: sid, [k]: v }).then(() => { s[k] = v || undefined; mm.remove(); render(); }).catch(() => {}); };
+  setTimeout(() => document.addEventListener("click", function off(e) { if (!e.target.closest("#mmenu")) { mm.remove(); document.removeEventListener("click", off); } }), 0);
+}
 const qMulti = (q) => q.questions.length > 1 || q.questions.some((x) => x.multiSelect);
 // A question with choices (AskUserQuestion), as a list: one row per option, and a last row to write your own
 // answer (23 Nov 2026, Diogo: "we need the last option of the question to be a free text input").
@@ -1259,7 +1272,7 @@ function wireChats(p, key) {
   b.querySelectorAll("[data-qopt]").forEach((x) => (x.onclick = () => pickAnswer(x.dataset.qopt)));
   b.querySelectorAll("[data-qin]").forEach((x) => { x.oninput = () => typeAnswer(x); x.onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); const [pid, sid] = x.dataset.qin.split("|"); if (!qMulti(findS(sid)?.s.question || { questions: [] })) sendAnswers(pid, sid); } }; });
   b.querySelectorAll("[data-qgo]").forEach((x) => (x.onclick = () => { const [pid, sid] = x.dataset.qgo.split("|"); sendAnswers(pid, sid); }));
-  b.querySelectorAll("[data-mdl],[data-eff]").forEach((x) => (x.onchange = () => { const [pid, sid] = (x.dataset.mdl || x.dataset.eff).split("|"); op("session.set", pid, { id: sid, [x.dataset.mdl ? "model" : "effort"]: x.value }).then(() => toast(`${x.dataset.mdl ? "Model" : "Effort"} set: ${x.selectedOptions[0].textContent}. It applies from this chat's next message.`)).catch(() => {}); }));
+  b.querySelectorAll("[data-mpick]").forEach((x) => (x.onclick = (e) => { e.stopPropagation(); modelMenu(x); }));
   b.querySelectorAll("[data-qsend]").forEach((x) => (x.onclick = () => { const [pid, sid] = x.dataset.qsend.split("|"); sendAnswers(pid, sid); }));
   b.querySelectorAll("[data-ask]").forEach((x) => (x.onclick = () => { const [pid, sid, id, answer] = x.dataset.ask.split("|"); answerAsk(pid, sid, id, answer); }));
   b.querySelectorAll("[data-undeny]").forEach((x) => (x.onclick = async () => { const [pid, sid, i] = x.dataset.undeny.split("|"); const s = findS(sid)?.s; if (!s) return; await op("session.set", pid, { id: sid, denied: (s.denied || []).filter((_, k) => k !== +i) }).catch(() => {}); refresh(); }));
